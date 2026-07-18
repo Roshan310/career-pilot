@@ -30,3 +30,5 @@ logs/
 # Temporary files
 .cache/
 .tmp/
+
+docs/
