@@ -32,6 +32,23 @@ def upload_file(user_id: uuid.UUID, filename: str, content: bytes, content_type:
     return key
 
 
+def upload_bytes(key: str, content: bytes, content_type: str) -> None:
+    """Store an object at an exact, caller-chosen key. Unlike `upload_file`, which
+    mints a random key per upload, this is for content that has a natural identity
+    and gets looked up again — generated question audio, keyed by session and
+    turn, so replaying a question doesn't re-bill the TTS vendor."""
+    _client.put_object(Bucket=settings.s3_bucket_name, Key=key, Body=content, ContentType=content_type)
+
+
+def get_bytes(key: str) -> bytes | None:
+    """The object's contents, or None if it isn't there. A cache miss is an
+    ordinary outcome here, not an error, so it doesn't raise."""
+    try:
+        return _client.get_object(Bucket=settings.s3_bucket_name, Key=key)["Body"].read()
+    except ClientError:
+        return None
+
+
 def get_signed_url(key: str, expires_in_seconds: int = 3600) -> str:
     return _client.generate_presigned_url(
         "get_object",

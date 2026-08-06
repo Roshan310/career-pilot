@@ -36,3 +36,17 @@ class MatchResponse(BaseModel):
 
 class SuggestionsResponse(BaseModel):
     suggestions: list = Field(default_factory=list)
+
+
+class MatchListItem(BaseModel):
+    """Flattened match + linked resume/job info for the dashboard and analysis list."""
+
+    id: uuid.UUID
+    status: str
+    overall_score: float | None
+    resume_id: uuid.UUID
+    resume_file_name: str | None
+    job_id: uuid.UUID
+    job_title: str | None
+    job_company: str | None
+    created_at: datetime

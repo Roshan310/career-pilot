@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,9 +7,24 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.v1.router import api_router
+from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.rate_limit import limiter
 from app.services.storage_service import ensure_bucket
+
+# Without this, nothing the application logs below WARNING is ever emitted:
+# uvicorn configures handlers for its own loggers only, and the root logger falls
+# back to a WARNING-level handler of last resort. Every `logger.info(...)` in
+# services/ was being written to nowhere — which was discovered the hard way,
+# while trying to diagnose a live failure using logging that didn't exist.
+logging.basicConfig(
+    level=get_settings().log_level.upper(),
+    format="%(levelname)-8s %(name)s: %(message)s",
+    # uvicorn --reload re-imports this module; without force the second pass is a
+    # no-op (basicConfig does nothing once the root logger has a handler) and the
+    # level silently stays wherever it was.
+    force=True,
+)
 
 
 @asynccontextmanager

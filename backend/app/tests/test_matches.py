@@ -132,6 +132,34 @@ async def test_create_match_unknown_resume_returns_404(authed_client, resume_and
     assert response.status_code == 404
 
 
+async def test_list_matches_returns_only_own_with_joined_info(authed_client, resume_and_job, db_session):
+    user, resume, job = resume_and_job
+    job.title = "Backend Engineer"
+    job.company = "Stripe"
+    resume.file_name = "backend_resume.pdf"
+
+    own_match = Match(resume_id=resume.id, job_id=job.id, status="done", overall_score=0.87)
+    db_session.add(own_match)
+
+    # another user's match must not leak into the list
+    other_user = await register_user(db_session, "otherlistuser@example.com", "password123", None)
+    other_resume = Resume(user_id=other_user.id, raw_text="x", parsed_data={}, embedding=EMBEDDING)
+    db_session.add(other_resume)
+    await db_session.flush()
+    db_session.add(Match(resume_id=other_resume.id, job_id=job.id, status="done"))
+    await db_session.commit()
+
+    response = await authed_client.get("/api/matches")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body) == 1
+    item = body[0]
+    assert item["overall_score"] == 0.87
+    assert item["job_title"] == "Backend Engineer"
+    assert item["job_company"] == "Stripe"
+    assert item["resume_file_name"] == "backend_resume.pdf"
+
+
 async def test_get_match_not_owned_returns_404(authed_client, resume_and_job, db_session):
     _, resume, job = resume_and_job
     other_user = await register_user(db_session, "otherresumeuser@example.com", "password123", None)

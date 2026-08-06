@@ -1,31 +1,33 @@
+import asyncio
+import logging
 import uuid
-from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import NotFoundError
 from app.core.rate_limit import limiter
 from app.db.session import get_db
-from app.models.interview import InterviewSession, InterviewTurn, SessionReport
+from app.models.interview import InterviewSession, SessionReport
 from app.models.job_description import JobDescription
 from app.models.match import Match
 from app.models.resume import Resume
 from app.models.user import User
 from app.schemas.interview import (
-    CurrentQuestion,
     InterviewCreateRequest,
+    InterviewListItem,
     InterviewSessionResponse,
     SessionReportResponse,
+    TranscriptionResponse,
     TurnSubmitRequest,
     TurnSubmitResponse,
 )
-from app.services import interview_state_machine as sm
-from app.services.llm.answer_evaluation import evaluate_answer
-from app.services.llm.question_generation import generate_question_plan
-from app.services.usage_service import check_and_increment
+from app.services import interview_service, transcription, tts
+from app.services.usage_service import check_limit, increment
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
@@ -38,34 +40,6 @@ async def _get_owned_session(db: AsyncSession, session_id: uuid.UUID, user: User
     if session is None:
         raise NotFoundError("Interview session not found")
     return session
-
-
-async def _get_turns(db: AsyncSession, session_id: uuid.UUID) -> list[InterviewTurn]:
-    result = await db.execute(
-        select(InterviewTurn)
-        .where(InterviewTurn.session_id == session_id)
-        .order_by(InterviewTurn.turn_number)
-    )
-    return list(result.scalars().all())
-
-
-def _pending_question(turns: list[InterviewTurn]) -> CurrentQuestion | None:
-    for turn in turns:
-        if turn.answer_transcript is None:
-            return CurrentQuestion(
-                turn_number=turn.turn_number,
-                question_text=turn.question_text,
-                question_type=turn.question_type,
-                targets_gap=turn.targets_gap,
-            )
-    return None
-
-
-async def _session_response(db: AsyncSession, session: InterviewSession) -> InterviewSessionResponse:
-    turns = await _get_turns(db, session.id)
-    response = InterviewSessionResponse.model_validate(session)
-    response.current_question = _pending_question(turns)
-    return response
 
 
 @router.post("", response_model=InterviewSessionResponse, status_code=201)
@@ -92,7 +66,7 @@ async def create_interview(
     if job is None:
         raise NotFoundError("Job description not found")
 
-    missing_skills: list = []
+    match = None
     if body.match_id is not None:
         match = (
             await db.execute(
@@ -103,39 +77,56 @@ async def create_interview(
         ).scalar_one_or_none()
         if match is None:
             raise NotFoundError("Match not found")
-        missing_skills = match.missing_skills or []
 
-    # Usage limit enforced BEFORE the question-generation LLM call (SPECS.md §9).
-    await check_and_increment(db, current_user, "interview")
+    # Checked BEFORE the question-generation LLM call (SPECS.md §9) so an
+    # over-limit request never spends one, but charged only AFTER the session
+    # exists — start_session can raise LLMServiceError on a Gemini 429, and a
+    # failed start must not cost the user an interview.
+    await check_limit(db, current_user, "interview")
 
-    question_plan = generate_question_plan(resume.parsed_data, job.parsed_requirements, missing_skills)
+    session = await interview_service.start_session(db, current_user, resume, job, match, body.mode)
+    await increment(db, current_user, "interview")
 
-    session = InterviewSession(
-        user_id=current_user.id,
-        resume_id=resume.id,
-        job_id=job.id,
-        match_id=body.match_id,
-        mode=body.mode,
-        status="in_progress",
-        question_plan=[q.model_dump() for q in question_plan.questions],
-    )
-    db.add(session)
-    await db.flush()
+    return await interview_service.build_session_response(db, session)
 
-    first_question = question_plan.questions[0]
-    db.add(
-        InterviewTurn(
-            session_id=session.id,
-            turn_number=1,
-            question_text=first_question.question_text,
-            question_type=first_question.question_type,
-            targets_gap=first_question.targets_gap,
+
+@router.get("", response_model=list[InterviewListItem])
+async def list_interviews(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(
+            InterviewSession,
+            JobDescription.title,
+            JobDescription.company,
+            SessionReport.overall_score,
         )
+        .outerjoin(JobDescription, InterviewSession.job_id == JobDescription.id)
+        .outerjoin(SessionReport, SessionReport.session_id == InterviewSession.id)
+        .where(InterviewSession.user_id == current_user.id)
+        .order_by(InterviewSession.started_at.desc())
     )
-    await db.commit()
-    await db.refresh(session)
 
-    return await _session_response(db, session)
+    items: list[InterviewListItem] = []
+    for session, title, company, overall_score in result.all():
+        duration_minutes = None
+        if session.ended_at is not None:
+            duration_minutes = round((session.ended_at - session.started_at).total_seconds() / 60, 1)
+        items.append(
+            InterviewListItem(
+                id=session.id,
+                mode=session.mode,
+                status=session.status,
+                job_title=title,
+                job_company=company,
+                overall_score=overall_score,
+                started_at=session.started_at,
+                ended_at=session.ended_at,
+                duration_minutes=duration_minutes,
+            )
+        )
+    return items
 
 
 @router.get("/{session_id}", response_model=InterviewSessionResponse)
@@ -145,7 +136,7 @@ async def get_interview(
     db: AsyncSession = Depends(get_db),
 ):
     session = await _get_owned_session(db, session_id, current_user)
-    return await _session_response(db, session)
+    return await interview_service.build_session_response(db, session)
 
 
 @router.post("/{session_id}/turns", response_model=TurnSubmitResponse)
@@ -158,109 +149,70 @@ async def submit_turn(
     db: AsyncSession = Depends(get_db),
 ):
     session = await _get_owned_session(db, session_id, current_user)
-    if session.status != "in_progress":
-        raise ConflictError(f"Interview session is '{session.status}', not accepting answers")
+    return await interview_service.submit_answer(db, session, body)
 
-    turns = await _get_turns(db, session_id)
-    pending = _pending_question(turns)
-    if pending is None or pending.turn_number != body.question_number:
-        raise ConflictError(
-            f"Expected an answer for question {pending.turn_number if pending else 'none pending'}, "
-            f"got {body.question_number}"
-        )
 
-    turn = next(t for t in turns if t.turn_number == body.question_number)
-    turn.answer_transcript = body.answer_transcript
-    turn.answer_duration_seconds = body.duration
+@router.get("/{session_id}/turns/{turn_number}/audio")
+@limiter.limit("30/minute")
+async def get_turn_audio(
+    request: Request,
+    session_id: uuid.UUID,
+    turn_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The question, spoken. Streams bytes through the API rather than handing out
+    a presigned URL so the JWT stays the only way in — the audio is as much the
+    user's private interview data as the transcript is.
 
-    based_on = turn.targets_gap or turn.question_text
+    A 503 here is expected and survivable: the client falls back to the browser's
+    own voice. That's why the TTS layer raises its own exception type instead of
+    an AppError — a missing voice must never read as a broken interview.
+    """
+    session = await _get_owned_session(db, session_id, current_user)
+
+    turn = await interview_service.get_turn(db, session.id, turn_number)
+    if turn is None:
+        raise NotFoundError("Turn not found")
+
     try:
-        evaluation = evaluate_answer(turn.question_text, based_on, body.answer_transcript)
-        turn.score = {
-            "structure": evaluation.structure,
-            "specificity": evaluation.specificity,
-            "relevance": evaluation.relevance,
-        }
-        llm_next_action, llm_follow_up = evaluation.next_action, evaluation.follow_up_question
-    except Exception:
-        # graceful degradation (§9): scoring this turn failed, but the
-        # interview keeps moving rather than the whole request failing.
-        turn.score = None
-        llm_next_action, llm_follow_up = "next_question", None
+        # Sync boto3 + a ~1s HTTP round trip. Off the event loop, or one slow
+        # synthesis stalls every other request the API is serving.
+        audio = await asyncio.to_thread(tts.question_audio, session.id, turn_number, turn.question_text)
+    except tts.TTSUnavailableError as exc:
+        logger.info("question audio unavailable for %s turn %s: %s", session_id, turn_number, exc)
+        raise HTTPException(status_code=503, detail="Question audio is unavailable.") from exc
 
-    await db.flush()
-    turns = await _get_turns(db, session_id)  # refresh with the now-answered turn included
-
-    next_step = sm.decide_next_step(
-        session, turns, session.question_plan or [], turn, llm_next_action, llm_follow_up
-    )
-
-    if next_step["action"] == "wrap_up":
-        await db.commit()
-        return TurnSubmitResponse(
-            session_status="wrapping_up",
-            evaluation=turn.score,
-            next_question=None,
-        )
-
-    next_turn = InterviewTurn(
-        session_id=session.id,
-        turn_number=body.question_number + 1,
-        question_text=next_step["question_text"],
-        question_type=next_step["question_type"],
-        targets_gap=next_step.get("targets_gap"),
-    )
-    db.add(next_turn)
-    await db.commit()
-
-    return TurnSubmitResponse(
-        session_status="in_progress",
-        evaluation=turn.score,
-        next_question=CurrentQuestion(
-            turn_number=next_turn.turn_number,
-            question_text=next_turn.question_text,
-            question_type=next_turn.question_type,
-            targets_gap=next_turn.targets_gap,
-        ),
+    return Response(
+        content=audio,
+        media_type=tts.CONTENT_TYPE,
+        # Same bytes for the life of the turn — let the browser skip the refetch
+        # on a replay, and private because this is one user's interview.
+        headers={"Cache-Control": "private, max-age=3600"},
     )
 
 
-def _aggregate_report(turns: list[InterviewTurn], missing_skills: list[dict]) -> dict:
-    scored = [t for t in turns if t.answer_transcript is not None and t.score]
+@router.post("/{session_id}/transcribe", response_model=TranscriptionResponse)
+@limiter.limit("30/minute")
+async def transcribe_answer(
+    request: Request,
+    session_id: uuid.UUID,
+    audio: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Turn a recorded answer into text. Deliberately separate from `submit_turn`:
+    if these were one call, a transcription failure would destroy an answer the
+    candidate already gave, and the client's retry path depends on holding a
+    complete envelope before anything can go wrong with sending it.
+    """
+    await _get_owned_session(db, session_id, current_user)  # ownership check
 
-    def turn_avg(t: InterviewTurn) -> float:
-        s = t.score
-        return (s["structure"] + s["specificity"] + s["relevance"]) / 3
-
-    weight = {"main": 1.0, "follow_up": 0.5}
-    weighted_sum = sum(turn_avg(t) * weight.get(t.question_type, 1.0) for t in scored)
-    weight_total = sum(weight.get(t.question_type, 1.0) for t in scored)
-    overall_score = (weighted_sum / weight_total) if weight_total else None
-
-    strengths = [
-        {"turn_number": t.turn_number, "question_text": t.question_text}
-        for t in scored
-        if t.score["structure"] >= 4 and t.score["specificity"] >= 4 and t.score["relevance"] >= 4
-    ]
-    improvement_areas = [
-        {"turn_number": t.turn_number, "question_text": t.question_text, "targets_gap": t.targets_gap}
-        for t in scored
-        if t.score["structure"] <= 2 or t.score["specificity"] <= 2 or t.score["relevance"] <= 2
-    ]
-
-    addressed_gaps = {t.targets_gap for t in scored if t.targets_gap and turn_avg(t) >= 3.5}
-    all_gap_names = {g["skill"] for g in missing_skills if isinstance(g, dict) and "skill" in g}
-    gap_coverage = {
-        "addressed": sorted(addressed_gaps & all_gap_names),
-        "still_open": sorted(all_gap_names - addressed_gaps),
-    }
-
-    return {
-        "overall_score": overall_score,
-        "strengths": strengths,
-        "improvement_areas": improvement_areas,
-        "gap_coverage": gap_coverage,
-    }
+    content = await audio.read()
+    transcript = await asyncio.to_thread(
+        transcription.transcribe_answer, content, audio.content_type
+    )
+    return TranscriptionResponse(transcript=transcript)
 
 
 @router.post("/{session_id}/complete", response_model=SessionReportResponse)
@@ -270,26 +222,18 @@ async def complete_interview(
     db: AsyncSession = Depends(get_db),
 ):
     session = await _get_owned_session(db, session_id, current_user)
-    if session.status == "completed":
-        raise ConflictError("Interview session is already completed")
+    return await interview_service.complete_session(db, session)
 
-    turns = await _get_turns(db, session_id)
 
-    missing_skills: list = []
-    if session.match_id is not None:
-        match = (await db.execute(select(Match).where(Match.id == session.match_id))).scalar_one_or_none()
-        if match is not None:
-            missing_skills = match.missing_skills or []
-
-    session.status = "completed"
-    session.ended_at = datetime.now(UTC)
-
-    aggregated = _aggregate_report(turns, missing_skills)
-    report = SessionReport(session_id=session.id, **aggregated)
-    db.add(report)
-    await db.commit()
-    await db.refresh(report)
-    return report
+@router.post("/{session_id}/abandon", response_model=InterviewSessionResponse)
+async def abandon_interview(
+    session_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await _get_owned_session(db, session_id, current_user)
+    session = await interview_service.abandon_session(db, session)
+    return await interview_service.build_session_response(db, session)
 
 
 @router.get("/{session_id}/report", response_model=SessionReportResponse)

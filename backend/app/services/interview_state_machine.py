@@ -46,6 +46,33 @@ def is_hard_capped(session: InterviewSession, turns: list[InterviewTurn]) -> boo
     return main_question_count(turns) >= settings.interview_hard_cap_questions
 
 
+def seconds_remaining(session: InterviewSession) -> float:
+    """Time left before the §7.2 hard cap forces a wrap-up. The live session UI
+    renders a countdown from this rather than computing its own — both sides have
+    to agree on when the interview ends, and this is the same clock is_hard_capped
+    uses."""
+    deadline = session.started_at + timedelta(minutes=settings.interview_hard_cap_minutes)
+    return max(0.0, (deadline - datetime.now(UTC)).total_seconds())
+
+
+def session_progress(
+    session: InterviewSession, turns: list[InterviewTurn], question_plan: list[dict]
+) -> dict:
+    """Everything the live UI needs to show 'question 3 of 8' and a countdown.
+    Pure, like the rest of this module — the router just serializes it."""
+    return {
+        "main_questions_answered": main_question_count(turns),
+        # The plan can be longer than the hard cap allows; the smaller of the two
+        # is what the candidate will actually be asked.
+        "main_questions_planned": min(len(question_plan), settings.interview_hard_cap_questions),
+        "follow_ups_used": followups_since_last_main(turns),
+        "max_follow_ups_per_question": settings.interview_max_followups_per_question,
+        "seconds_remaining": seconds_remaining(session),
+        "hard_cap_minutes": settings.interview_hard_cap_minutes,
+        "hard_capped": is_hard_capped(session, turns),
+    }
+
+
 def decide_next_step(
     session: InterviewSession,
     turns: list[InterviewTurn],

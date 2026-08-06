@@ -76,6 +76,8 @@ class SessionReport(Base):
     strengths: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     improvement_areas: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     gap_coverage: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Session-level rollup of interview_turns.speech_metrics (SPECS.md §7.4).
+    speech_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

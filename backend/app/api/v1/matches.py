@@ -12,7 +12,13 @@ from app.models.job_description import JobDescription
 from app.models.match import Match
 from app.models.resume import Resume
 from app.models.user import User
-from app.schemas.match import MatchCreateRequest, MatchResponse, MatchStatusResponse, SuggestionsResponse
+from app.schemas.match import (
+    MatchCreateRequest,
+    MatchListItem,
+    MatchResponse,
+    MatchStatusResponse,
+    SuggestionsResponse,
+)
 from app.services.usage_service import check_and_increment
 from app.workers.queue import enqueue_matching_job
 
@@ -69,6 +75,34 @@ async def create_match(
     enqueue_matching_job(str(match.id))
 
     return MatchStatusResponse(id=match.id, status=match.status)
+
+
+@router.get("", response_model=list[MatchListItem])
+async def list_matches(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Match, Resume.file_name, JobDescription.title, JobDescription.company)
+        .join(Resume, Match.resume_id == Resume.id)
+        .join(JobDescription, Match.job_id == JobDescription.id)
+        .where(Resume.user_id == current_user.id)
+        .order_by(Match.created_at.desc())
+    )
+    return [
+        MatchListItem(
+            id=match.id,
+            status=match.status,
+            overall_score=match.overall_score,
+            resume_id=match.resume_id,
+            resume_file_name=file_name,
+            job_id=match.job_id,
+            job_title=title,
+            job_company=company,
+            created_at=match.created_at,
+        )
+        for match, file_name, title, company in result.all()
+    ]
 
 
 @router.get("/{match_id}", response_model=MatchResponse)

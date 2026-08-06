@@ -131,3 +131,50 @@ def test_decide_next_step_forces_wrap_up_on_hard_cap_even_if_llm_says_continue()
     # also true even when the LLM explicitly asks for a follow-up
     step2 = sm.decide_next_step(session, turns, QUESTION_PLAN, turns[0], "follow_up", "Tell me more")
     assert step2["action"] == "wrap_up"
+
+
+def test_session_progress_counts_answered_mains_and_pending_followups():
+    session = make_session()
+    turns = [
+        make_turn(1, "main"),
+        make_turn(2, "follow_up"),
+        make_turn(3, "main", answered=False),
+    ]
+
+    progress = sm.session_progress(session, turns, QUESTION_PLAN)
+
+    assert progress["main_questions_answered"] == 1
+    assert progress["main_questions_planned"] == len(QUESTION_PLAN)
+    assert progress["follow_ups_used"] == 1
+    assert progress["max_follow_ups_per_question"] == settings.interview_max_followups_per_question
+    assert progress["hard_capped"] is False
+
+
+def test_session_progress_caps_planned_questions_at_the_hard_cap():
+    # A plan longer than the hard cap can't all be asked, so the UI must not
+    # advertise more questions than the candidate will actually get.
+    session = make_session()
+    long_plan = [{"question_text": f"Q{i}"} for i in range(settings.interview_hard_cap_questions + 4)]
+
+    progress = sm.session_progress(session, [], long_plan)
+
+    assert progress["main_questions_planned"] == settings.interview_hard_cap_questions
+
+
+def test_seconds_remaining_counts_down_from_the_same_clock_as_the_hard_cap():
+    fresh = make_session()
+    full_window = settings.interview_hard_cap_minutes * 60
+    assert full_window - 5 < sm.seconds_remaining(fresh) <= full_window
+
+    half_spent = make_session(
+        started_at=datetime.now(UTC) - timedelta(minutes=settings.interview_hard_cap_minutes / 2)
+    )
+    assert abs(sm.seconds_remaining(half_spent) - full_window / 2) < 5
+
+
+def test_seconds_remaining_floors_at_zero_when_the_cap_has_passed():
+    expired = make_session(
+        started_at=datetime.now(UTC) - timedelta(minutes=settings.interview_hard_cap_minutes + 10)
+    )
+    assert sm.seconds_remaining(expired) == 0.0
+    assert sm.session_progress(expired, [], QUESTION_PLAN)["hard_capped"] is True
