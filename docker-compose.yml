@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: jaagir
+      POSTGRES_PASSWORD: jaagir
+      POSTGRES_DB: jaagir_sathi
+    ports:
+      # host 5433 -> container 5432: the host already runs a system-wide Postgres
+      # on 5432 (systemd `postgresql@18-main`); containers still reach this one
+      # at `postgres:5432` on the docker network, unaffected by this remap.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jaagir"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    # Run migrations on startup (idempotent — a no-op once at head), then serve.
+    # This is what lets a single `docker compose up -d` bring up the whole backend.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://jaagir:jaagir@postgres:5432/jaagir_sathi
+      DATABASE_URL_SYNC: postgresql+psycopg://jaagir:jaagir@postgres:5432/jaagir_sathi
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+
+  worker:
+    build: ./backend
+    command: rq worker -u redis://redis:6379/0 default
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://jaagir:jaagir@postgres:5432/jaagir_sathi
+      DATABASE_URL_SYNC: postgresql+psycopg://jaagir:jaagir@postgres:5432/jaagir_sathi
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+
+  frontend:
+    build: ./frontend
+    command: npm run dev
+    # The browser (not the container) calls the API, so this points at the
+    # host-mapped API port. Change to your deployed API URL in production.
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      # Anonymous volumes so the container keeps its own node_modules and build
+      # cache: the host's `npm run dev` writes to the same bind-mounted tree, and
+      # without these the two would clobber each other's .next output.
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  pgdata:
+  miniodata:
