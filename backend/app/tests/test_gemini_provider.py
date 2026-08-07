@@ -18,7 +18,11 @@ from app.services.llm.providers.base import (
     ProviderConfigurationError,
     TransientProviderError,
 )
+from app.core.config import get_settings
+from app.services.llm.providers import gemini
 from app.services.llm.providers.gemini import GeminiProvider
+
+settings = get_settings()
 
 
 def response(text=None, finish_reason="STOP", thoughts=0):
@@ -133,20 +137,45 @@ def test_no_thinking_config_is_sent_when_none_is_requested():
     assert config.thinking_config is None
 
 
-def test_a_model_that_rejects_the_budget_falls_back_instead_of_failing(caplog):
-    """The safety net. A 400 naming the thinking config is retried once without
-    it — a slow parse is vastly better than a broken upload."""
-    rejection = Exception("400 INVALID_ARGUMENT: thinking_budget is not supported for this model")
+@pytest.mark.parametrize(
+    "message",
+    [
+        "400 INVALID_ARGUMENT: thinking_budget is not supported for this model",
+        # What gemini-3.6-flash ACTUALLY returns. The first version of the
+        # detector looked for "thinking" or "thought" in the message, so this
+        # generic wording slipped past it and every resume upload 400'd.
+        "rejected request: 400 INVALID_ARGUMENT. {'error': {'code': 400, "
+        "'message': 'Request contains an invalid argument.', 'status': 'INVALID_ARGUMENT'}}",
+    ],
+)
+def test_a_model_that_rejects_the_budget_falls_back_instead_of_failing(caplog, message):
+    """The safety net. An invalid-argument rejection is retried once without the
+    thinking config — a slow parse is vastly better than a broken upload."""
+    gemini._THINKING_UNSUPPORTED.clear()
+    rejection = Exception(message)
 
     with caplog.at_level(logging.WARNING):
         result, config = _generate(GeminiProvider("k"), 0, side_effect=[rejection, None])
 
     assert result == '{"ok": true}'
     assert config.thinking_config is None, "the retry must drop the rejected setting"
-    assert "retrying with the model default" in caplog.text
+    assert "retrying without it" in caplog.text
 
 
-def test_an_unrelated_rejection_is_not_retried():
+def test_a_rejecting_model_is_only_probed_once():
+    """Otherwise every single request pays for a wasted call to rediscover it."""
+    gemini._THINKING_UNSUPPORTED.clear()
+    rejection = Exception("400 INVALID_ARGUMENT. Request contains an invalid argument.")
+
+    _generate(GeminiProvider("k"), 0, side_effect=[rejection, None])
+    # Second call: no rejection scripted, so a probe would raise IndexError.
+    _, config = _generate(GeminiProvider("k"), 0)
+
+    assert config.thinking_config is None
+    assert settings.gemini_llm_model in gemini._THINKING_UNSUPPORTED
+
+
+def test_a_configuration_error_still_fails_fast():
     """A bad key must still fail fast — the thinking fallback is narrow on
     purpose, and a configuration error is a permanent one."""
     bad_key = Exception("401 PERMISSION_DENIED: API key not valid")
@@ -165,3 +194,15 @@ def test_an_unknown_model_is_a_configuration_error_not_a_transient_blip():
 
     with pytest.raises(ProviderConfigurationError, match="GEMINI_LLM_MODEL"):
         _generate(GeminiProvider("k"), None, side_effect=[missing_model])
+
+
+def test_a_wrong_model_does_not_trigger_the_thinking_probe():
+    """The detector is broad on purpose, so config errors need an explicit guard
+    — dropping the thinking config cannot make a missing model appear."""
+    gemini._THINKING_UNSUPPORTED.clear()
+    missing = Exception("404 NOT_FOUND: models/nope is not found for API version v1beta")
+
+    with pytest.raises(ProviderConfigurationError):
+        _generate(GeminiProvider("k"), 0, side_effect=[missing])
+
+    assert not gemini._THINKING_UNSUPPORTED, "must not blame the thinking config"

@@ -25,11 +25,34 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+# Models observed to reject a thinking budget, so the next request doesn't pay
+# for the same discovery. Process-local and deliberately not persisted: it costs
+# one call after a restart, and a wrong entry cannot outlive the process.
+_THINKING_UNSUPPORTED: set[str] = set()
+
+
 def _looks_like_thinking_rejection(exc: Exception) -> bool:
-    """Whether a rejection is about the thinking config specifically, rather
-    than a genuinely bad key or malformed request we should not retry."""
+    """Whether a rejection could plausibly be about the thinking config.
+
+    Deliberately broad. The first version checked for "thinking" or "thought" in
+    the message, on the assumption that the API names the offending parameter.
+    It does not — gemini-3.6-flash rejects the budget with a bare
+    "Request contains an invalid argument.", so the fallback never fired and a
+    latency optimisation became a hard 400 on every upload.
+
+    An invalid-argument rejection is now enough. The thinking config is the only
+    thing we add to an otherwise plain request, so retrying without it is both
+    the obvious suspect and a strictly better diagnostic: if it still fails, the
+    cause is genuinely something else and the error says so.
+    """
     text = str(exc).lower()
-    return "thinking" in text or "thought" in text
+    return (
+        "thinking" in text
+        or "thought" in text
+        or "invalid_argument" in text
+        or "invalid argument" in text
+        or "400" in text
+    )
 
 # Clients are cached per API key and built lazily (not at import time) so these
 # modules can be imported — and mocked in tests — with no key configured.
@@ -73,16 +96,28 @@ class GeminiProvider:
         slowing it. Hence the fallback: try once more without the setting, and
         say so in the log rather than failing.
         """
+        model = settings.gemini_llm_model
+        if model in _THINKING_UNSUPPORTED:
+            thinking_budget = None
+
         try:
             return self._generate(prompt, thinking_budget)
+        except ProviderConfigurationError:
+            # A wrong model name or key is never fixed by dropping the thinking
+            # config, and the detector is broad enough to have caught it.
+            raise
         except PermanentProviderError as exc:
             if thinking_budget is None or not _looks_like_thinking_rejection(exc):
                 raise
+            _THINKING_UNSUPPORTED.add(model)
             logger.warning(
-                "%s rejected thinking_budget=%s; retrying with the model default. "
-                "Set GEMINI_EXTRACTIVE_THINKING_BUDGET= (empty) to stop asking.",
+                "%s rejected thinking_budget=%s for model %s; retrying without it and "
+                "not asking again this process. Set GEMINI_EXTRACTIVE_THINKING_BUDGET= "
+                "(empty) in .env to skip this probe entirely. Detail: %s",
                 self.name,
                 thinking_budget,
+                model,
+                exc,
             )
             return self._generate(prompt, None)
 
