@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, UploadCloud } from "lucide-react";
@@ -45,7 +45,19 @@ function validateFile(f: File): string | null {
   return null;
 }
 
+/**
+ * Parsing is a real multi-second wait even after the speedups, so name what is
+ * happening rather than showing an unlabelled spinner. Same pattern as the
+ * interview page's PREPARING_STEPS.
+ */
+const PARSING_STEPS = [
+  "Reading your file…",
+  "Pulling out your experience and projects…",
+  "Indexing it for matching…",
+];
+
 export function UploadResumeDialog({ open, onOpenChange, onUploaded }: Props) {
+  const [stepIndex, setStepIndex] = useState(0);
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -71,6 +83,18 @@ export function UploadResumeDialog({ open, onOpenChange, onUploaded }: Props) {
     setDragging(false);
     setUploading(false);
   }
+
+  useEffect(() => {
+    if (!uploading) {
+      setStepIndex(0);
+      return;
+    }
+    const id = setInterval(
+      () => setStepIndex((i) => Math.min(i + 1, PARSING_STEPS.length - 1)),
+      2500,
+    );
+    return () => clearInterval(id);
+  }, [uploading]);
 
   async function handleUpload() {
     if (!file || fileError) return;
@@ -170,7 +194,7 @@ export function UploadResumeDialog({ open, onOpenChange, onUploaded }: Props) {
           </Button>
           <Button onClick={handleUpload} disabled={!file || !!fileError || uploading}>
             {uploading && <Loader2 size={18} className="animate-spin" />}
-            {uploading ? "Parsing..." : "Upload & Parse"}
+            {uploading ? PARSING_STEPS[stepIndex] : "Upload & Parse"}
           </Button>
         </div>
       </DialogContent>

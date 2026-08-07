@@ -9,6 +9,8 @@ quota pool — `build_provider_chain()` turns each key into its own provider and
 from google import genai
 from google.genai import types
 
+import logging
+
 from app.core.config import get_settings
 from app.services.llm.prompts import TRANSCRIPTION_PROMPT
 from app.services.llm.providers.base import (
@@ -17,7 +19,16 @@ from app.services.llm.providers.base import (
     TransientProviderError,
 )
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
+
+
+def _looks_like_thinking_rejection(exc: Exception) -> bool:
+    """Whether a rejection is about the thinking config specifically, rather
+    than a genuinely bad key or malformed request we should not retry."""
+    text = str(exc).lower()
+    return "thinking" in text or "thought" in text
 
 # Clients are cached per API key and built lazily (not at import time) so these
 # modules can be imported — and mocked in tests — with no key configured.
@@ -48,12 +59,42 @@ class GeminiProvider:
     def configured(self) -> bool:
         return bool(self.api_key)
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, thinking_budget: int | None = None) -> str:
+        """Raw model output.
+
+        `thinking_budget=0` disables reasoning for extractive work — pulling
+        fields out of a document that already contains them. It is the dominant
+        latency cost on a task that gains nothing from deliberation.
+
+        The allowed range is model-dependent (the SDK says so explicitly), and a
+        rejected value comes back as a 400, which `classify` treats as permanent
+        — so a wrong guess would break parsing outright rather than merely
+        slowing it. Hence the fallback: try once more without the setting, and
+        say so in the log rather than failing.
+        """
+        try:
+            return self._generate(prompt, thinking_budget)
+        except PermanentProviderError as exc:
+            if thinking_budget is None or not _looks_like_thinking_rejection(exc):
+                raise
+            logger.warning(
+                "%s rejected thinking_budget=%s; retrying with the model default. "
+                "Set GEMINI_EXTRACTIVE_THINKING_BUDGET= (empty) to stop asking.",
+                self.name,
+                thinking_budget,
+            )
+            return self._generate(prompt, None)
+
+    def _generate(self, prompt: str, thinking_budget: int | None) -> str:
+        config = types.GenerateContentConfig(response_mime_type="application/json")
+        if thinking_budget is not None:
+            config.thinking_config = types.ThinkingConfig(thinking_budget=thinking_budget)
+
         try:
             response = _get_client(self.api_key).models.generate_content(
                 model=settings.gemini_llm_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
+                config=config,
             )
         except Exception as exc:  # google-genai raises its own hierarchy
             raise classify(exc, self.name) from exc

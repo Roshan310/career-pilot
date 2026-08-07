@@ -77,8 +77,13 @@ async def upload_resume(
     )
 
     try:
-        parsed_data = await asyncio.to_thread(parse_resume, raw_text)
-        embedding = await asyncio.to_thread(embed_text, raw_text)
+        # Concurrently, not one after the other: both take only `raw_text`, so
+        # running them in sequence spent the sum of two independent round trips
+        # while the user watched a spinner.
+        parsed_data, embedding = await asyncio.gather(
+            asyncio.to_thread(parse_resume, raw_text),
+            asyncio.to_thread(embed_text, raw_text),
+        )
 
         resume = Resume(
             user_id=current_user.id,

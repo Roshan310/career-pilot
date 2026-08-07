@@ -38,10 +38,13 @@ async def create_job(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Both are blocking, multi-second HTTP calls — off the event loop so one job
-    # submission doesn't stall every other request in the worker.
-    parsed_requirements = await asyncio.to_thread(parse_job, body.raw_text)
-    embedding = await asyncio.to_thread(embed_text, body.raw_text)
+    # Blocking multi-second HTTP calls, so off the event loop — and concurrent
+    # with each other, since both take only the raw text and neither needs the
+    # other's result.
+    parsed_requirements, embedding = await asyncio.gather(
+        asyncio.to_thread(parse_job, body.raw_text),
+        asyncio.to_thread(embed_text, body.raw_text),
+    )
 
     job = JobDescription(
         user_id=current_user.id,

@@ -41,13 +41,37 @@ export interface EducationItem {
   year?: string | null;
 }
 
+/**
+ * A personal, academic or open-source project. First-class rather than part of
+ * `additional_sections`: for an early-career candidate the projects section is
+ * the evidence, and the schema previously had nowhere to put it — so entire
+ * sections were silently dropped at parse time.
+ */
+export interface ProjectItem {
+  name?: string | null;
+  description?: string | null;
+  technologies: string[];
+  bullets: string[];
+  start_date?: string | null;
+  end_date?: string | null;
+  url?: string | null;
+}
+
+/** Any heading the fixed fields don't cover: publications, awards, languages. */
+export interface AdditionalSection {
+  heading: string;
+  items: string[];
+}
+
 export interface ParsedResumeData {
   contact: ContactInfo;
   summary?: string | null;
   skills: string[];
   experience: ExperienceItem[];
+  projects?: ProjectItem[];
   education: EducationItem[];
   certifications: string[];
+  additional_sections?: AdditionalSection[];
 }
 
 export interface Resume {
@@ -72,6 +96,11 @@ export interface ResumeListItem {
 export interface ParsedJobRequirements {
   required_skills: string[];
   preferred_skills: string[];
+  /** Kept out of the skills lists so "English" isn't reported as a missing
+   *  technical skill. Displayed, never scored as a gap. */
+  languages?: string[];
+  soft_requirements?: string[];
+  domain_experience?: string[];
   seniority_level?: string | null;
   years_experience_required?: number | null;
   key_responsibilities: string[];

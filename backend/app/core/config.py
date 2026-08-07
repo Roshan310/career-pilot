@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # retried twice per key across two keys, so the worst case had no limit at
     # all. Transcription of a long answer is the slowest case, hence not 30s.
     gemini_timeout_seconds: int = 60
+    # Thinking budget for *extractive* calls (resume and JD parsing), where the
+    # answer is already in the text and deliberation is pure latency. 0 disables
+    # it. Set empty to leave the model default alone; the provider also falls
+    # back automatically if a model rejects the value.
+    gemini_extractive_thinking_budget: int | None = 0
 
     @property
     def gemini_api_keys(self) -> list[str]:

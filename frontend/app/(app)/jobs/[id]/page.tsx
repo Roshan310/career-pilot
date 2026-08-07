@@ -69,6 +69,34 @@ export default function JobDetailPage() {
             )}
           </div>
 
+          {((req.languages?.length ?? 0) > 0 ||
+            (req.soft_requirements?.length ?? 0) > 0 ||
+            (req.domain_experience?.length ?? 0) > 0) && (
+            <div className="space-y-3 rounded-2xl border border-divider bg-background p-4">
+              <p className="text-[13px] text-text-muted">
+                Listed by the posting, but not scored as skill gaps.
+              </p>
+              {[
+                ["Languages", req.languages],
+                ["Ways of working", req.soft_requirements],
+                ["Domain experience", req.domain_experience],
+              ].map(([label, values]) =>
+                (values as string[] | undefined)?.length ? (
+                  <div key={label as string}>
+                    <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+                      {label as string}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(values as string[]).map((v, i) => (
+                        <Badge key={i} variant="neutral">{v}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : null,
+              )}
+            </div>
+          )}
+
           {req.required_skills?.length > 0 && (
             <div>
               <p className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">

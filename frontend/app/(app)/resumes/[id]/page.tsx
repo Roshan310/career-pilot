@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Award, Briefcase, Download, GraduationCap, Loader2, Mail, MapPin, Phone, Sparkles } from "lucide-react";
+import { Award, Briefcase, Download, FolderGit2, GraduationCap, ListChecks, Loader2, Mail, MapPin, Phone, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
@@ -157,6 +157,61 @@ export default function ResumeDetailPage() {
         </Card>
       )}
 
+      {/* Projects — where an early-career candidate's real evidence lives, and
+          what the parser used to drop entirely for want of a field to put it in. */}
+      {(p.projects?.length ?? 0) > 0 && (
+        <Card className="p-6">
+          <CardTitle><FolderGit2 size={18} className="text-wine-fg" /> Projects</CardTitle>
+          <CardContent className="mt-5 space-y-6">
+            {p.projects!.map((proj, i) => (
+              <div key={i} className="border-l-2 border-divider pl-4">
+                <p className="text-[16px] font-semibold text-text-primary">
+                  {proj.url ? (
+                    <a
+                      href={proj.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40"
+                    >
+                      {proj.name || "Project"}
+                    </a>
+                  ) : (
+                    proj.name || "Project"
+                  )}
+                </p>
+                {(proj.start_date || proj.end_date) && (
+                  <p className="mt-0.5 text-[13px] text-text-muted">
+                    {proj.start_date || "?"} — {proj.end_date || "Present"}
+                  </p>
+                )}
+                {proj.description && (
+                  <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">
+                    {proj.description}
+                  </p>
+                )}
+                {(proj.technologies?.length ?? 0) > 0 && (
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    {proj.technologies.map((t, j) => (
+                      <Badge key={j} variant="neutral">{t}</Badge>
+                    ))}
+                  </div>
+                )}
+                {(proj.bullets?.length ?? 0) > 0 && (
+                  <ul className="mt-2.5 space-y-1.5">
+                    {proj.bullets.map((b, j) => (
+                      <li key={j} className="flex gap-2 text-[15px] leading-relaxed text-text-secondary">
+                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-text-muted" />
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Education + certifications */}
       <div className="grid gap-6 lg:grid-cols-2">
         {p.education?.length > 0 && (
@@ -187,6 +242,25 @@ export default function ResumeDetailPage() {
           </Card>
         )}
       </div>
+      {/* Whatever else the resume contained. The point of the catch-all is that
+          nothing gets silently discarded for not fitting a named field. */}
+      {(p.additional_sections?.length ?? 0) > 0 && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {p.additional_sections!.map((section, i) => (
+            <Card key={i} className="p-6">
+              <CardTitle><ListChecks size={18} className="text-wine-fg" /> {section.heading}</CardTitle>
+              <CardContent className="mt-4 space-y-2">
+                {section.items.map((item, j) => (
+                  <p key={j} className="flex gap-2 text-[15px] leading-relaxed text-text-secondary">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-text-muted" />
+                    {item}
+                  </p>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

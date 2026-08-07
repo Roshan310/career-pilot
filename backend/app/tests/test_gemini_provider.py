@@ -7,12 +7,13 @@ that interprets an SDK response has to be tested against a shape the SDK actuall
 produces, not against a stand-in that skips the interpreting.
 """
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from app.services.llm.providers.base import TransientProviderError
+from app.services.llm.providers.base import PermanentProviderError, TransientProviderError
 from app.services.llm.providers.gemini import GeminiProvider
 
 
@@ -87,3 +88,63 @@ def test_audio_is_sent_with_the_mime_type_it_was_given():
     part = generate.call_args.kwargs["contents"][0]
     assert part.inline_data.mime_type == "audio/ogg"
     assert part.inline_data.data == b"audio-bytes"
+
+
+# ==========================================================================
+# Thinking budget
+#
+# Reasoning is the dominant latency cost on extractive parsing, but the allowed
+# range is model-dependent (the SDK says so). A rejected value returns a 400,
+# which classify() calls permanent — so a wrong guess would break resume upload
+# outright rather than merely slowing it down.
+# ==========================================================================
+
+
+def _generate(provider, budget, side_effect=None, text='{"ok": true}'):
+    captured = {}
+
+    def fake_generate_content(**kwargs):
+        captured["config"] = kwargs["config"]
+        if side_effect is not None:
+            outcome = side_effect.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+        return SimpleNamespace(text=text)
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=fake_generate_content))
+    with patch("app.services.llm.providers.gemini._get_client", return_value=client):
+        result = provider.generate("prompt", thinking_budget=budget)
+    return result, captured["config"]
+
+
+def test_an_extractive_call_asks_for_no_thinking():
+    _, config = _generate(GeminiProvider("k"), 0)
+    assert config.thinking_config.thinking_budget == 0
+
+
+def test_no_thinking_config_is_sent_when_none_is_requested():
+    """Question generation and answer evaluation genuinely benefit from
+    reasoning — they must keep the model default."""
+    _, config = _generate(GeminiProvider("k"), None)
+    assert config.thinking_config is None
+
+
+def test_a_model_that_rejects_the_budget_falls_back_instead_of_failing(caplog):
+    """The safety net. A 400 naming the thinking config is retried once without
+    it — a slow parse is vastly better than a broken upload."""
+    rejection = Exception("400 INVALID_ARGUMENT: thinking_budget is not supported for this model")
+
+    with caplog.at_level(logging.WARNING):
+        result, config = _generate(GeminiProvider("k"), 0, side_effect=[rejection, None])
+
+    assert result == '{"ok": true}'
+    assert config.thinking_config is None, "the retry must drop the rejected setting"
+    assert "retrying with the model default" in caplog.text
+
+
+def test_an_unrelated_rejection_is_not_retried():
+    """A bad key must still fail fast — the fallback is narrow on purpose."""
+    bad_key = Exception("401 PERMISSION_DENIED: API key not valid")
+
+    with pytest.raises(PermanentProviderError):
+        _generate(GeminiProvider("k"), 0, side_effect=[bad_key])

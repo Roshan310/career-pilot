@@ -61,8 +61,12 @@ class LLMProvider(Protocol):
         only one key set still works."""
         ...
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, thinking_budget: int | None = None) -> str:
         """Raw model output, expected (but not guaranteed) to be JSON.
+
+        `thinking_budget=0` asks the model not to reason before answering, for
+        extractive tasks that gain nothing from it. None leaves the model
+        default. A provider that cannot honour the request must still answer.
 
         Raises TransientProviderError / PermanentProviderError. Must not raise
         bare exceptions — the client relies on the distinction.

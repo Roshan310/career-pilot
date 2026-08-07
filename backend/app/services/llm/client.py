@@ -157,7 +157,9 @@ def call_json(prompt: str) -> dict | list:
     )
 
 
-def call_structured(prompt: str, model: type[ModelT]) -> ModelT:
+def call_structured(
+    prompt: str, model: type[ModelT], *, thinking_budget: int | None = None
+) -> ModelT:
     """Call the LLM and validate the response against a Pydantic model.
 
     Validation runs INSIDE the retried unit, for exactly the reason `json.loads`
@@ -172,7 +174,9 @@ def call_structured(prompt: str, model: type[ModelT]) -> ModelT:
     and it is what this policy was always meant to provide.
     """
     return _with_failover(
-        lambda provider: model.model_validate(json.loads(provider.generate(prompt))),
+        lambda provider: model.model_validate(
+            json.loads(provider.generate(prompt, thinking_budget=thinking_budget))
+        ),
         retry_on=(json.JSONDecodeError, ValidationError),
     )
 

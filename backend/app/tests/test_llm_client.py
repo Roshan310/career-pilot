@@ -31,12 +31,14 @@ class FakeProvider:
         self._script = list(script)
         self._configured = configured
         self.calls = 0
+        self.thinking_budgets: list = []
 
     @property
     def configured(self) -> bool:
         return self._configured
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, thinking_budget: int | None = None) -> str:
+        self.thinking_budgets.append(thinking_budget)
         return self._next()
 
     def transcribe(self, audio: bytes, mime_type: str) -> str:

@@ -18,6 +18,13 @@ class ParsedJobRequirements(BaseModel):
 
     required_skills: list[str] = Field(default_factory=list)
     preferred_skills: list[str] = Field(default_factory=list)
+    # Kept out of the skills lists on purpose. A posting asking for "Written and
+    # spoken English" was being scored as a *missing technical skill*, which is
+    # both wrong and demoralising. These are shown to the user, never scored as
+    # skill gaps.
+    languages: list[str] = Field(default_factory=list)
+    soft_requirements: list[str] = Field(default_factory=list)
+    domain_experience: list[str] = Field(default_factory=list)
     seniority_level: str | None = None
     # Float, not int. Sub-year requirements are real ("3+ months", internships)
     # and the model returns them as such — 0.25 against an int field was a hard
