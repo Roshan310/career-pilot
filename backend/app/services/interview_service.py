@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, UnprocessableError
 from app.models.interview import InterviewSession, InterviewTurn, SessionReport
 from app.models.job_description import JobDescription
 from app.models.match import Match
@@ -124,31 +124,113 @@ async def start_session(
         generate_question_plan, resume.parsed_data, job.parsed_requirements, missing_skills
     )
 
-    session = InterviewSession(
-        user_id=user.id,
+    return await _open_session(
+        db,
+        user,
         resume_id=resume.id,
         job_id=job.id,
         match_id=match.id if match is not None else None,
         mode=mode,
-        status="in_progress",
         question_plan=[q.model_dump() for q in question_plan.questions],
+    )
+
+
+async def _open_session(
+    db: AsyncSession,
+    user: User,
+    *,
+    resume_id: uuid.UUID | None,
+    job_id: uuid.UUID | None,
+    match_id: uuid.UUID | None,
+    mode: str,
+    question_plan: list[dict],
+    replay_of_session_id: uuid.UUID | None = None,
+    allow_follow_ups: bool = True,
+) -> InterviewSession:
+    """Open a session over a ready question plan and pre-create turn 1.
+
+    Shared by `start_session` (plan just generated) and `replay_session` (plan
+    read back from an earlier session), so the two cannot drift on how a session
+    is opened — the pre-created first turn in particular is what `pending_question`
+    relies on to answer "where is this interview".
+    """
+    session = InterviewSession(
+        user_id=user.id,
+        resume_id=resume_id,
+        job_id=job_id,
+        match_id=match_id,
+        mode=mode,
+        status="in_progress",
+        question_plan=question_plan,
+        replay_of_session_id=replay_of_session_id,
+        allow_follow_ups=allow_follow_ups,
     )
     db.add(session)
     await db.flush()
 
-    first_question = question_plan.questions[0]
+    first_question = question_plan[0]
     db.add(
         InterviewTurn(
             session_id=session.id,
             turn_number=1,
-            question_text=first_question.question_text,
-            question_type=first_question.question_type,
-            targets_gap=first_question.targets_gap,
+            question_text=first_question["question_text"],
+            question_type=first_question.get("question_type"),
+            targets_gap=first_question.get("targets_gap"),
         )
     )
     await db.commit()
     await db.refresh(session)
     return session
+
+
+# A session can only be forked once it has stopped moving. Replaying a live one
+# would leave two sessions advancing through the same plan.
+REPLAYABLE_STATUSES = ("completed", "abandoned")
+
+
+async def replay_session(
+    db: AsyncSession,
+    user: User,
+    source: InterviewSession,
+    *,
+    allow_follow_ups: bool,
+) -> InterviewSession:
+    """A fresh attempt at an earlier interview's questions.
+
+    Makes **no LLM call** — that is the entire point. The question plan is
+    already stored on the source session, and the question audio is cached by
+    content (`services/tts.cache_key`), so a replay reuses both instead of
+    re-billing for them.
+
+    Only the foreign keys are copied, never the resume or job rows themselves,
+    so a replay still works after the resume it was built from has been deleted.
+    """
+    if source.status not in REPLAYABLE_STATUSES:
+        raise ConflictError(
+            f"Interview session is '{source.status}' — finish it before practising it again"
+        )
+    if not source.question_plan:
+        # Predates question_plan being stored, or a half-written session. There
+        # is nothing to replay and regenerating a plan would be a different
+        # interview wearing this one's name.
+        raise UnprocessableError("This interview has no stored questions to replay.")
+
+    return await _open_session(
+        db,
+        user,
+        resume_id=source.resume_id,
+        job_id=source.job_id,
+        match_id=source.match_id,
+        mode=source.mode,
+        question_plan=source.question_plan,
+        # Always the root attempt, so counting attempts is a single grouping
+        # rather than a walk back up a chain of replays-of-replays.
+        replay_of_session_id=source.replay_of_session_id or source.id,
+        # Deliberately not inherited from the source: the candidate chooses
+        # afresh each time, and silently repeating last run's choice would make
+        # the toggle look broken.
+        allow_follow_ups=allow_follow_ups,
+    )
 
 
 async def submit_answer(

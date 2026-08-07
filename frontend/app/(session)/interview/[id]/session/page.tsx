@@ -43,10 +43,22 @@ export default function InterviewSessionPage() {
   const typed = s.typing;
   const submitting = s.phase === "submitting" || s.phase === "transcribing";
 
+  // A quiet marker so a replay is never mistaken for the original run, and so
+  // "main questions only" is visible rather than inferred from follow-ups that
+  // never arrive.
+  const subtitle =
+    [
+      meta?.job_company,
+      meta && meta.total_attempts > 1 ? `Attempt ${meta.attempt_number}` : null,
+      meta && !meta.allow_follow_ups ? "main questions only" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null;
+
   const header = (
     <SessionHeader
       title={meta?.job_title || "Mock interview"}
-      subtitle={meta?.job_company}
+      subtitle={subtitle}
       progress={s.progress}
       secondsRemaining={s.secondsRemaining}
       right={

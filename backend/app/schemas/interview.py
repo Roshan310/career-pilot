@@ -85,6 +85,21 @@ class InterviewCreateRequest(BaseModel):
     mode: InterviewMode = "jd_specific"
 
 
+class InterviewReplayRequest(BaseModel):
+    """Re-run a finished interview's stored questions.
+
+    Nothing identifies the source here — that is the path parameter. The only
+    choice is whether follow-ups are asked: with them off the interview is main
+    questions only, every one of which is already in the audio cache, so the
+    session costs nothing in TTS.
+
+    A body with a default rather than a query parameter, so the field has one
+    obvious home if replay ever takes more options.
+    """
+
+    allow_follow_ups: bool = True
+
+
 class CurrentQuestion(BaseModel):
     turn_number: int
     question_text: str
@@ -134,6 +149,11 @@ class InterviewSessionResponse(BaseModel):
     resume_id: uuid.UUID | None = None
     job_id: uuid.UUID | None = None
     match_id: uuid.UUID | None = None
+    # The root attempt this session re-runs, or None if it is the original.
+    replay_of_session_id: uuid.UUID | None = None
+    # False for a "main questions only" run — the live UI says so, because a
+    # follow-up counter that can never move looks broken rather than deliberate.
+    allow_follow_ups: bool = True
     mode: str
     status: str
     question_plan: list | None
@@ -217,6 +237,13 @@ class InterviewListItem(BaseModel):
     # Lets the history list plot a per-dimension trend without one report fetch
     # per session.
     dimension_averages: dict | None = None
+    # Attempt numbering within a replay chain. Both are 1 for a session that has
+    # never been replayed, so the UI can render "Attempt 2 of 3" without a
+    # special case for the common one.
+    replay_of_session_id: uuid.UUID | None = None
+    allow_follow_ups: bool = True
+    attempt_number: int = 1
+    total_attempts: int = 1
     started_at: datetime
     ended_at: datetime | None
     duration_minutes: float | None

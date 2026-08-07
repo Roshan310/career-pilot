@@ -97,7 +97,34 @@ skills or experience the candidate doesn't have evidence for.
 Return ONLY valid JSON: {{"suggestion": "...", "has_honest_connection": true|false}}"""
 
 
-def suggestion_prompt(bullet_text: str, missing_skill: str, relevant_experience_context: str) -> str:
+# A departure from §6.3, which assumes there is always a bullet to rewrite.
+# There isn't: when nothing in the resume relates to the missing skill, handing
+# the model an unrelated sentence and asking it to "rewrite this toward
+# Kubernetes" invites exactly the fabrication the prompt above forbids. Asking
+# the honest question directly produces better advice than asking the wrong
+# question and relying on a guard rail. See docs/decisions.md.
+NO_BULLET_SUGGESTION_PROMPT = """You are helping a candidate improve their resume for a specific job.
+
+Job requires: {missing_skill}
+Candidate's actual experience (for context, do not fabricate beyond this): {relevant_experience_context}
+
+Nothing in the candidate's background relates to this requirement. Do NOT invent a bullet
+or imply experience they don't have. Instead, tell them concretely what to build or learn to
+earn this skill honestly — one specific, achievable step, not generic advice.
+
+Return ONLY valid JSON: {{"suggestion": "...", "has_honest_connection": false}}"""
+
+
+def suggestion_prompt(
+    bullet_text: str | None, missing_skill: str, relevant_experience_context: str
+) -> str:
+    """`bullet_text` is None when no line in the resume relates to the skill —
+    see `suggestions.pick_bullet_for_skill`."""
+    if bullet_text is None:
+        return NO_BULLET_SUGGESTION_PROMPT.format(
+            missing_skill=missing_skill,
+            relevant_experience_context=relevant_experience_context,
+        )
     return SUGGESTION_PROMPT.format(
         bullet_text=bullet_text,
         missing_skill=missing_skill,

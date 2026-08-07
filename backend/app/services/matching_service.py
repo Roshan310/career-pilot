@@ -158,7 +158,7 @@ def _expand(tokens: set[str]) -> set[str]:
 # is present. Half, because a two-token requirement like "Vector databases" is
 # satisfied by evidence of either half, while a longer phrase still needs real
 # coverage rather than one incidental word.
-_MATCH_THRESHOLD = 0.5
+MATCH_THRESHOLD = 0.5
 
 
 def _requirement_met(requirement: str, evidence: set[str]) -> bool:
@@ -167,7 +167,28 @@ def _requirement_met(requirement: str, evidence: set[str]) -> bool:
         # Nothing meaningful was asked for (pure stop words) — don't hold it
         # against the candidate.
         return True
-    return len(required & evidence) / len(required) >= _MATCH_THRESHOLD
+    return len(required & evidence) / len(required) >= MATCH_THRESHOLD
+
+
+def relevance(text: str, skill: str) -> float:
+    """How strongly `text` evidences `skill`, from 0.0 to 1.0.
+
+    The same token / alias / implication machinery `_requirement_met` uses,
+    exposed as a score rather than a verdict so callers can *rank* candidates
+    instead of merely filtering them. `suggestions.py` needs the single most
+    related line in a resume, which a boolean cannot answer.
+
+    Agrees with `_requirement_met` at the boundary by construction: it computes
+    the same ratio, and `MATCH_THRESHOLD` remains the cutoff for "related at
+    all". The one deliberate difference is the empty-requirement case — a skill
+    made entirely of stop words is *met* by anything (we don't penalise the
+    candidate for a JD's noise) but is evidenced by nothing, so ranking against
+    it must return 0.0 rather than 1.0.
+    """
+    required = _tokens(skill)
+    if not required:
+        return 0.0
+    return len(required & _expand(_tokens(text))) / len(required)
 
 
 # ---------------------------------------------------------------------------

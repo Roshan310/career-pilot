@@ -227,43 +227,49 @@ export default function MatchReportPage() {
         <CardTitle><Lightbulb size={18} className="text-wine-fg" /> Rewrite Suggestions</CardTitle>
         <CardContent className="mt-4 space-y-4">
           {suggestions.length ? (
-            suggestions.map((s, i) => (
-              <div key={i} className="rounded-2xl border border-border bg-background p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {s.missing_skill && <Badge variant="wine">{s.missing_skill}</Badge>}
-                    {s.priority === "required" && <Badge variant="error">Must have</Badge>}
+            suggestions.map((s, i) => {
+              // A rewrite needs a line to rewrite *and* a real connection to
+              // the gap. Anything else is advice, and is framed as advice —
+              // striking through an unrelated bullet said the opposite of
+              // what was meant.
+              const isRewrite = Boolean(s.original_bullet) && s.has_honest_connection !== false;
+              return (
+                <div key={i} className="rounded-2xl border border-border bg-background p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {s.missing_skill && <Badge variant="wine">{s.missing_skill}</Badge>}
+                      {s.priority === "required" && <Badge variant="error">Must have</Badge>}
+                    </div>
+                    {s.suggestion && (
+                      <CopyButton value={s.suggestion} label={isRewrite ? "Copy rewrite" : "Copy"} />
+                    )}
                   </div>
-                  {s.suggestion && <CopyButton value={s.suggestion} label="Copy rewrite" />}
-                </div>
 
-                {/* The "before" was stored on every suggestion and never shown —
-                    a rewrite you can't compare to the original is hard to trust. */}
-                {s.original_bullet && (
-                  <div className="mb-3">
-                    <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
-                      Your bullet today
-                    </p>
-                    <p className="text-[14px] leading-relaxed text-text-secondary line-through decoration-text-disabled">
-                      {s.original_bullet}
-                    </p>
-                  </div>
-                )}
+                  {isRewrite && (
+                    <div className="mb-3">
+                      <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+                        Rewriting this line
+                      </p>
+                      <p className="text-[14px] leading-relaxed text-text-secondary line-through decoration-text-disabled">
+                        {s.original_bullet}
+                      </p>
+                      {/* Says *why* this line was picked. Absent on suggestions
+                          stored before per-skill targeting existed. */}
+                      {s.original_bullet_source && (
+                        <p className="mt-1 text-[12px] text-text-muted">
+                          {s.original_bullet_source}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                {s.original_bullet && (
                   <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
-                    Suggested rewrite
+                    {isRewrite ? "Suggested rewrite" : "What to build toward"}
                   </p>
-                )}
-                <p className="text-[15px] leading-relaxed text-text-primary">{s.suggestion}</p>
-
-                {s.has_honest_connection === false && (
-                  <p className="mt-2 text-[13px] text-warning">
-                    Note: only use this if it reflects genuine experience.
-                  </p>
-                )}
-              </div>
-            ))
+                  <p className="text-[15px] leading-relaxed text-text-primary">{s.suggestion}</p>
+                </div>
+              );
+            })
           ) : (
             <p className="text-[15px] text-text-secondary">
               No rewrite suggestions were generated for this match.

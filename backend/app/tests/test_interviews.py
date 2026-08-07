@@ -624,7 +624,7 @@ async def test_question_audio_is_served_for_the_turns_own_question(authed_client
     assert response.content == b"mp3-bytes"
     # The text spoken is the stored question — never client-supplied, or the
     # endpoint becomes a way to bill someone else's key for arbitrary text.
-    assert synth.call_args.args[2] == "Question 1"
+    assert synth.call_args.args[0] == "Question 1"
 
 
 async def test_missing_voice_config_degrades_to_503_not_a_broken_interview(authed_client, resume_job_match):
@@ -831,3 +831,230 @@ async def test_match_id_is_null_when_the_interview_had_no_gap_analysis(authed_cl
     body = created.json()
     assert body["match_id"] is None
     assert body["resume_id"] == str(resume.id)
+
+
+# ---------------------------------------------------------------------------
+# Replay — practising a finished interview again
+# ---------------------------------------------------------------------------
+
+
+async def _finished_session(authed_client, resume, job, match, status="completed") -> str:
+    """A session that has stopped moving, which is the only kind that can be replayed."""
+    session_id = await _start_session(authed_client, resume, job, match)
+    endpoint = "complete" if status == "completed" else "abandon"
+    await authed_client.post(f"/api/interviews/{session_id}/{endpoint}")
+    return session_id
+
+
+async def test_replay_reuses_the_stored_plan_without_calling_the_llm(authed_client, resume_job_match):
+    """The whole feature in one assertion. `generate_question_plan` is patched to
+    raise, so if a replay touched it at all this test fails — that call is the
+    5-15s wait and the bulk of a fresh interview's cost."""
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    with patch(
+        "app.services.interview_service.generate_question_plan",
+        side_effect=AssertionError("a replay must never generate a question plan"),
+    ):
+        response = await authed_client.post(f"/api/interviews/{source_id}/replay", json={})
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] != source_id
+    assert body["status"] == "in_progress"
+    assert body["replay_of_session_id"] == source_id
+    assert [q["question_text"] for q in body["question_plan"]] == [q["question_text"] for q in QUESTIONS]
+    # Turn 1 is pre-created, exactly as a fresh session's is.
+    assert body["current_question"]["question_text"] == "Question 1"
+
+
+async def test_replay_does_not_count_against_the_monthly_limit(authed_client, resume_job_match, db_session):
+    """Replays are free by decision: no plan generation, and every main question
+    comes from the audio cache. Metering them like a fresh interview would price
+    the cheap path as the expensive one."""
+    user, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    await db_session.refresh(user)
+    before = user.monthly_interview_count
+
+    await authed_client.post(f"/api/interviews/{source_id}/replay", json={})
+
+    await db_session.refresh(user)
+    assert user.monthly_interview_count == before
+
+    # ...while a fresh interview still is charged, so the assertion above is
+    # measuring a counter that actually moves.
+    with patch("app.services.interview_service.generate_question_plan", return_value=CANNED_PLAN):
+        await authed_client.post("/api/interviews", json=_create_interview_payload(resume, job, match))
+
+    await db_session.refresh(user)
+    assert user.monthly_interview_count == before + 1
+
+
+async def test_replay_defaults_to_follow_ups_on_and_honours_the_choice(authed_client, resume_job_match):
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    default = await authed_client.post(f"/api/interviews/{source_id}/replay", json={})
+    assert default.json()["allow_follow_ups"] is True
+
+    drill = await authed_client.post(
+        f"/api/interviews/{source_id}/replay", json={"allow_follow_ups": False}
+    )
+    assert drill.json()["allow_follow_ups"] is False
+    # The live UI reads this to avoid promising a follow-up that cannot come.
+    assert drill.json()["progress"]["max_follow_ups_per_question"] == 0
+
+
+async def test_the_follow_up_choice_is_not_inherited_from_the_source(authed_client, resume_job_match):
+    """Silently repeating last run's choice would make the toggle look broken."""
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    drill = await authed_client.post(
+        f"/api/interviews/{source_id}/replay", json={"allow_follow_ups": False}
+    )
+    drill_id = drill.json()["id"]
+    await authed_client.post(f"/api/interviews/{drill_id}/abandon")
+
+    full = await authed_client.post(f"/api/interviews/{drill_id}/replay", json={})
+    assert full.json()["allow_follow_ups"] is True
+
+
+async def test_replaying_a_replay_points_at_the_root_attempt(authed_client, resume_job_match):
+    """Otherwise counting attempts means walking back up a chain of
+    replays-of-replays instead of grouping on one column."""
+    _, resume, job, match = resume_job_match
+    root_id = await _finished_session(authed_client, resume, job, match)
+
+    second_id = (await authed_client.post(f"/api/interviews/{root_id}/replay", json={})).json()["id"]
+    await authed_client.post(f"/api/interviews/{second_id}/abandon")
+
+    third = await authed_client.post(f"/api/interviews/{second_id}/replay", json={})
+    assert third.json()["replay_of_session_id"] == root_id
+
+
+async def test_a_live_session_cannot_be_replayed(authed_client, resume_job_match):
+    """Two sessions advancing through the same plan is not a thing the state
+    machine or the report has any meaning for."""
+    _, resume, job, match = resume_job_match
+    session_id = await _start_session(authed_client, resume, job, match)
+
+    response = await authed_client.post(f"/api/interviews/{session_id}/replay", json={})
+    assert response.status_code == 409
+
+
+async def test_an_abandoned_session_can_be_replayed(authed_client, resume_job_match):
+    """Quitting early is the most likely reason to want another go."""
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match, status="abandoned")
+
+    response = await authed_client.post(f"/api/interviews/{source_id}/replay", json={})
+    assert response.status_code == 201
+
+
+async def test_replay_survives_the_resume_being_deleted(authed_client, resume_job_match, db_session):
+    """Only foreign keys are copied, never the resume itself — and those columns
+    are ON DELETE SET NULL. Interview history outliving its source data is the
+    existing contract; a replay must not be the one thing that breaks it."""
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    await db_session.delete(await db_session.get(Resume, resume.id))
+    await db_session.commit()
+
+    response = await authed_client.post(f"/api/interviews/{source_id}/replay", json={})
+    assert response.status_code == 201
+    assert response.json()["resume_id"] is None
+
+
+async def test_another_users_session_cannot_be_replayed(authed_client, resume_job_match, db_session):
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    intruder = await register_user(db_session, "intruder-replay@example.com", "password123", None)
+    token, _ = issue_tokens(intruder)
+
+    response = await authed_client.post(
+        f"/api/interviews/{source_id}/replay",
+        json={},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+async def test_interview_history_numbers_the_attempts(authed_client, resume_job_match):
+    """"Attempt 2 of 3" is what turns replay into visible progress rather than a
+    repeated chore, and a never-replayed session must still read "1 of 1"."""
+    _, resume, job, match = resume_job_match
+    root_id = await _finished_session(authed_client, resume, job, match)
+
+    second_id = (await authed_client.post(f"/api/interviews/{root_id}/replay", json={})).json()["id"]
+    await authed_client.post(f"/api/interviews/{second_id}/abandon")
+    third_id = (await authed_client.post(f"/api/interviews/{second_id}/replay", json={})).json()["id"]
+
+    # An unrelated session, to prove chains are grouped rather than counted globally.
+    solo_id = await _finished_session(authed_client, resume, job, match)
+
+    items = {item["id"]: item for item in (await authed_client.get("/api/interviews")).json()}
+
+    assert (items[root_id]["attempt_number"], items[root_id]["total_attempts"]) == (1, 3)
+    assert (items[second_id]["attempt_number"], items[second_id]["total_attempts"]) == (2, 3)
+    assert (items[third_id]["attempt_number"], items[third_id]["total_attempts"]) == (3, 3)
+    assert (items[solo_id]["attempt_number"], items[solo_id]["total_attempts"]) == (1, 1)
+
+
+async def test_a_drill_replay_never_asks_a_follow_up_end_to_end(authed_client, resume_job_match):
+    """The state-machine unit test proves the branch; this proves the wiring —
+    request body to column to `decide_next_step` — with an evaluation that asks
+    for a follow-up on *every* answer.
+
+    Every follow-up not asked is text never sent to ElevenLabs, which is what
+    makes this mode free. The full-interview run below is the control.
+    """
+    _, resume, job, match = resume_job_match
+    source_id = await _finished_session(authed_client, resume, job, match)
+
+    always_follow_up = AnswerEvaluation(
+        **_good_evaluation(next_action="follow_up", follow_up_question="Can you say more?")
+    )
+
+    async def run(allow_follow_ups: bool) -> list[str]:
+        session_id = (
+            await authed_client.post(
+                f"/api/interviews/{source_id}/replay",
+                json={"allow_follow_ups": allow_follow_ups},
+            )
+        ).json()["id"]
+
+        with patch("app.services.interview_service.evaluate_answer", return_value=always_follow_up):
+            question_number, status = 1, "in_progress"
+            while status == "in_progress" and question_number < 20:
+                body = (
+                    await authed_client.post(
+                        f"/api/interviews/{session_id}/turns",
+                        json={
+                            "question_number": question_number,
+                            "answer_transcript": "A specific, detailed answer.",
+                            "duration": 30.0,
+                            "source": "typed",
+                        },
+                    )
+                ).json()
+                status = body["session_status"]
+                if not body.get("next_question"):
+                    break
+                question_number = body["next_question"]["turn_number"]
+
+        session = (await authed_client.get(f"/api/interviews/{session_id}")).json()
+        return [turn["question_type"] for turn in session["turns"]]
+
+    drill_types = await run(False)
+    full_types = await run(True)
+
+    assert "follow_up" not in drill_types
+    # The control: the identical evaluation does produce follow-ups when allowed,
+    # so the assertion above is measuring the flag and not a broken loop.
+    assert "follow_up" in full_types

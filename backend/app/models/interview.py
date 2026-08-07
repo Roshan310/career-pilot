@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +39,28 @@ class InterviewSession(Base):
     )
     match_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("matches.id", ondelete="SET NULL"), nullable=True
+    )
+    # Set when this session re-runs an earlier one's stored question plan. Points
+    # at the *root* attempt, never at the immediately preceding one, so all
+    # attempts of one interview share a single parent and "attempt N of M" is a
+    # grouping rather than a recursive walk. SET NULL for the same reason as the
+    # three FKs above: deleting the original must not delete its replays.
+    replay_of_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("interview_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Chosen per replay. Off means main questions only, which is the one mode
+    # that costs nothing in TTS: every question comes from cache and no new text
+    # is ever synthesized. It does NOT save an LLM call — `evaluate_answer`
+    # returns the score and the follow-up verdict together.
+    #
+    # On the session rather than passed per request because the state machine
+    # consults it on every answer, and a session that changed its own rules
+    # mid-run would produce a report nobody could interpret.
+    allow_follow_ups: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), default=True
     )
     mode: Mapped[str] = mapped_column(String, default="jd_specific", nullable=False)
     status: Mapped[str] = mapped_column(String, default="in_progress", nullable=False)

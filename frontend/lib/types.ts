@@ -184,8 +184,14 @@ export interface MissingSkill {
 
 export interface Suggestion {
   missing_skill?: string;
-  /** The bullet as it stands today. Stored all along, never shown. */
+  /**
+   * The resume line this rewrite targets, chosen for *this* missing skill.
+   * Absent when nothing in the resume relates to the skill — then the
+   * suggestion is advice about experience to gain, not a rewrite.
+   */
   original_bullet?: string;
+  /** Where that line came from: "Backend Intern at Acme", "Project: RAG". */
+  original_bullet_source?: string;
   suggestion?: string;
   /** "required" | "preferred" — how urgent this gap is. */
   priority?: string;
@@ -249,6 +255,12 @@ export interface InterviewListItem {
   overall_score: number | null;
   /** {structure, specificity, relevance} out of 5. Null on reports written before this was stored. */
   dimension_averages: Record<string, number> | null;
+  /** The root attempt this session re-runs, or null if it is the original. */
+  replay_of_session_id: string | null;
+  allow_follow_ups: boolean;
+  /** Both 1 for a session that was never replayed, so "1 of 1" needs no special case. */
+  attempt_number: number;
+  total_attempts: number;
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -340,6 +352,9 @@ export interface InterviewSession {
   resume_id: string | null;
   job_id: string | null;
   match_id: string | null;
+  replay_of_session_id: string | null;
+  /** False on a "main questions only" run. */
+  allow_follow_ups: boolean;
   mode: string;
   status: InterviewStatus | string;
   question_plan: QuestionPlanItem[] | null;

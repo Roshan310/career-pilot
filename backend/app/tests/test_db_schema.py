@@ -85,3 +85,22 @@ async def test_deleting_resume_sets_interview_session_fk_null(db_session):
         )
     ).scalar_one()
     assert refreshed.resume_id is None
+
+
+async def test_a_persisted_session_defaults_to_follow_ups_enabled(db_session):
+    """`allow_follow_ups` is NOT NULL with a server default, so no row can ever
+    carry the None an unsaved object briefly has — which matters because the
+    state machine reads it as "off". This is what makes the column safe to add
+    to a table that already had rows.
+    """
+    user = User(email="follow-ups-default@example.com", password_hash="hashed")
+    db_session.add(user)
+    await db_session.flush()
+
+    session = InterviewSession(user_id=user.id)  # nothing passed
+    db_session.add(session)
+    await db_session.flush()
+    await db_session.refresh(session)
+
+    assert session.allow_follow_ups is True
+    assert session.replay_of_session_id is None

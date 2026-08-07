@@ -9,10 +9,16 @@ actually want to be interviewed by.
 
 Caching is not an optimization detail — it's what makes the cost bounded. TTS
 bills per character, so without it a reconnect, a replay, or a page refresh
-would re-bill every question the candidate has already heard. Keyed by session
-and turn, each question is paid for exactly once.
+would re-bill every question the candidate has already heard.
+
+The cache is keyed by *content*, not by session. Keying it by session and turn
+meant a replay of a past interview — the same questions, in the same voice —
+missed every object and re-billed audio already paid for, which made practising
+an interview twice cost twice. Content addressing also deduplicates a follow-up
+question that recurs across sessions.
 """
 
+import hashlib
 import logging
 
 import httpx
@@ -40,8 +46,33 @@ def is_configured() -> bool:
     return bool(settings.eleven_labs_api_key)
 
 
-def cache_key(session_id, turn_number: int) -> str:
-    return f"interview-audio/{session_id}/{turn_number}.mp3"
+# Bumped by hand whenever the `voice_settings` block in `_synthesize` changes.
+# Those numbers are part of what the bytes sound like, but unlike the voice and
+# model ids they are literals rather than settings, so nothing else in the key
+# would notice them changing — and the cache would happily serve audio in the
+# old delivery forever.
+VOICE_SETTINGS_VERSION = "v1"
+
+
+def cache_key(text: str) -> str:
+    """The object key for one question's audio.
+
+    Derived from everything that determines the bytes: the question text and
+    the full voice configuration. Two sessions asking the same question in the
+    same voice therefore share one object, which is what makes replaying an
+    interview cost nothing in TTS.
+    """
+    fingerprint = "|".join(
+        (
+            settings.eleven_labs_voice_id,
+            settings.eleven_labs_model_id,
+            settings.eleven_labs_output_format,
+            VOICE_SETTINGS_VERSION,
+            text,
+        )
+    )
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+    return f"interview-audio/questions/{digest}.mp3"
 
 
 def _synthesize(text: str) -> bytes:
@@ -84,8 +115,12 @@ def _synthesize(text: str) -> bytes:
     return response.content
 
 
-def question_audio(session_id, turn_number: int, text: str) -> bytes:
+def question_audio(text: str) -> bytes:
     """Audio for one question, from cache when possible.
+
+    Takes only the text: which session or turn is asking is irrelevant to what
+    the bytes are, and making it part of the identity is precisely what used to
+    re-bill replays.
 
     A storage failure is logged and swallowed rather than raised: audio that was
     generated but not cached is still perfectly good audio, and refusing to serve
@@ -94,7 +129,7 @@ def question_audio(session_id, turn_number: int, text: str) -> bytes:
     if not is_configured():
         raise TTSUnavailableError("no ELEVEN_LABS_API_KEY configured")
 
-    key = cache_key(session_id, turn_number)
+    key = cache_key(text)
     cached = storage_service.get_bytes(key)
     if cached:
         return cached

@@ -21,6 +21,26 @@ export function createInterview(body: InterviewCreateRequest): Promise<Interview
   return api.post<InterviewSession>("/api/interviews", body);
 }
 
+/**
+ * Practise a finished interview again over its stored questions.
+ *
+ * Returns immediately — unlike `createInterview`, nothing is generated, so
+ * there is no 5-15s wait and no "preparing your interview" screen on this path.
+ *
+ * `allowFollowUps: false` runs the main questions only. That is the mode that
+ * costs nothing in TTS: every question is already in the audio cache, and no
+ * new text is ever synthesized. It does not make the run free of answer
+ * scoring, which happens either way.
+ */
+export function replayInterview(
+  sessionId: string,
+  { allowFollowUps }: { allowFollowUps: boolean },
+): Promise<InterviewSession> {
+  return api.post<InterviewSession>(`/api/interviews/${sessionId}/replay`, {
+    allow_follow_ups: allowFollowUps,
+  });
+}
+
 /** Full session incl. turn history — this is what restores a session after a reload. */
 export function getInterview(sessionId: string): Promise<InterviewSession> {
   return api.get<InterviewSession>(`/api/interviews/${sessionId}`);

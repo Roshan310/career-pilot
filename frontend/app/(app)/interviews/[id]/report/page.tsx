@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Mic, Target, ThumbsUp, TriangleAlert } from "lucide-react";
+import { Mic, Repeat, Target, ThumbsUp, TriangleAlert } from "lucide-react";
 import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { CountUp } from "@/components/common/count-up";
 import { FindingList } from "@/components/interview/report-findings";
 import { SpeechMetricsCard } from "@/components/interview/speech-metrics-card";
 import { TurnBreakdown } from "@/components/interview/turn-breakdown";
+import { ReplayDialog } from "@/components/interview/replay-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInterview, useInterviewReport, useJob } from "@/hooks/use-data";
 import { ratingToPct } from "@/lib/utils";
@@ -27,6 +28,7 @@ export default function InterviewReportPage() {
   // Names the role this interview was for. The heading was the literal string
   // "Interview Feedback" and that context appeared nowhere on the page.
   const { data: job } = useJob(session?.job_id ?? "");
+  const [replayOpen, setReplayOpen] = useState(false);
 
   /** Re-run the same pairing. Carries the ids so the picker arrives filled in. */
   const practiceHref = session?.resume_id && session?.job_id
@@ -96,16 +98,23 @@ export default function InterviewReportPage() {
             <p className="mt-1.5 text-[15px] text-text-secondary">
               Aggregate score across all answered questions, weighting main questions above follow-ups.
             </p>
+            {/* Two different things, so two buttons. Replaying these questions
+                is the one you want after seeing a score — it starts instantly
+                and lets you compare like for like. A new interview redrafts the
+                plan, which is a 15s wait and a different set of questions. */}
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Button onClick={() => router.push(practiceHref)}>
-                <Mic size={18} /> Practice again
+              <Button onClick={() => setReplayOpen(true)}>
+                <Repeat size={18} /> Practise this again
               </Button>
-              <span className="text-[13px] text-text-muted">
-                {stillOpen.length
-                  ? `${stillOpen.length} gap${stillOpen.length === 1 ? "" : "s"} still to cover.`
-                  : "Fresh questions, same role."}
-              </span>
+              <Button variant="secondary" onClick={() => router.push(practiceHref)}>
+                <Mic size={18} /> New questions
+              </Button>
             </div>
+            <p className="mt-3 text-[13px] text-text-muted">
+              {stillOpen.length
+                ? `${stillOpen.length} gap${stillOpen.length === 1 ? "" : "s"} still to cover.`
+                : "Same questions, fresh answers — see whether your score moves."}
+            </p>
           </div>
         </div>
       </Card>
@@ -174,6 +183,8 @@ export default function InterviewReportPage() {
       </Card>
 
       {session && <TurnBreakdown turns={session.turns} questionPlan={session.question_plan} />}
+
+      <ReplayDialog open={replayOpen} onOpenChange={setReplayOpen} sessionId={id} />
     </div>
   );
 }
