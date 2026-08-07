@@ -23,10 +23,11 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.core.exceptions import LLMServiceError
+from app.core.exceptions import LLMConfigurationError, LLMServiceError
 from app.services.llm.providers import (
     LLMProvider,
     PermanentProviderError,
+    ProviderConfigurationError,
     ProviderError,
     RateLimitedError,
     TransientProviderError,
@@ -81,6 +82,7 @@ def _with_failover(
     unscored) rather than this function silently returning a default.
     """
     failures: list[str] = []
+    configuration_failures: list[str] = []
     chain = build_provider_chain()
 
     if not chain:
@@ -114,9 +116,17 @@ def _with_failover(
                 failures.append(f"{provider.name}: {exc}")
                 logger.info("%s failed, attempt %d/%d: %s",
                             provider.name, attempt, ATTEMPTS_PER_PROVIDER, exc)
+            except ProviderConfigurationError as exc:
+                # Every key in the chain reads the same model name, so failing
+                # over is guaranteed to reproduce this. Recorded separately so
+                # the caller can say "misconfigured" rather than "try again".
+                failures.append(f"{provider.name}: {exc}")
+                configuration_failures.append(f"{provider.name}: {exc}")
+                logger.error("%s is misconfigured, not retrying: %s", provider.name, exc)
+                break
             except PermanentProviderError as exc:
-                # Retrying can't help (bad key, no credit, rejected request).
-                # Don't add latency to every call — move on immediately.
+                # Retrying can't help (no credit, rejected request). Don't add
+                # latency to every call — move on immediately.
                 failures.append(f"{provider.name}: {exc}")
                 logger.warning("%s failed permanently, not retrying: %s", provider.name, exc)
                 break
@@ -138,6 +148,20 @@ def _with_failover(
     # `failures` carries raw vendor text — quota metric names, project ids, the
     # number of keys configured. Useful in a log, not something to hand to an
     # API client, so the detail goes to the logger and the caller gets a summary.
+    if configuration_failures and len(configuration_failures) == len(failures):
+        # Loud, because nothing the user does will clear it and the fix is a
+        # one-line settings change. The detail stays in the log — an API client
+        # has no business seeing which env var is wrong.
+        logger.error(
+            "LLM CONFIGURATION ERROR — no request can succeed until this is fixed. "
+            "Check GEMINI_LLM_MODEL and GEMINI_API_KEY in your .env: %s",
+            "; ".join(configuration_failures),
+        )
+        raise LLMConfigurationError(
+            "The AI service is not configured correctly. This needs an "
+            "administrator — retrying will not help."
+        )
+
     logger.warning("all LLM providers failed: %s", "; ".join(failures))
     raise LLMServiceError(
         "The AI service is temporarily unavailable. Please try again in a moment."

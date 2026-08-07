@@ -51,6 +51,15 @@ class LLMServiceError(AppError):
     status_code = status.HTTP_502_BAD_GATEWAY
 
 
+class LLMConfigurationError(LLMServiceError):
+    """The model provider is misconfigured — wrong model name, bad key.
+
+    A subclass of LLMServiceError so existing handling still catches it, but
+    distinguishable so callers stop telling the user to "try again": no number
+    of retries fixes a model that does not exist.
+    """
+
+
 class ServiceUnavailableError(AppError):
     """A dependency we own is down — Redis, object storage, the TTS vendor.
 

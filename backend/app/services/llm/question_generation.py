@@ -1,6 +1,6 @@
 import logging
 
-from app.core.exceptions import LLMServiceError
+from app.core.exceptions import LLMConfigurationError, LLMServiceError
 from app.schemas.interview import QuestionPlan
 from app.services.llm.client import call_structured
 from app.services.llm.prompts import question_generation_prompt
@@ -17,6 +17,10 @@ def generate_question_plan(
         # Validation happens inside the retry (see `call_structured`): an
         # off-schema field is a resampling problem, not a fatal one.
         return call_structured(question_generation_prompt(resume_parsed_data, job_parsed_requirements, missing_skills), QuestionPlan)
+    except LLMConfigurationError:
+        # Says exactly what is wrong already; relabelling it as a parsing
+        # problem would send the user to re-upload a file that is fine.
+        raise
     except LLMServiceError:
-        logger.warning("Question plan failed schema validation after every attempt", exc_info=True)
+        logger.warning("Question plan generation failed after every attempt", exc_info=True)
         raise LLMServiceError("We couldn't prepare your interview questions. Please try again.") from None

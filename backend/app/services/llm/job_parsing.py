@@ -1,7 +1,7 @@
 import logging
 
 from app.core.config import get_settings
-from app.core.exceptions import LLMServiceError
+from app.core.exceptions import LLMConfigurationError, LLMServiceError
 from app.schemas.job import ParsedJobRequirements
 from app.services.llm.client import call_structured
 from app.services.llm.prompts import job_parsing_prompt
@@ -20,6 +20,10 @@ def parse_job(raw_text: str) -> ParsedJobRequirements:
             # Extraction, not reasoning: every field is already in the posting.
             thinking_budget=settings.gemini_extractive_thinking_budget,
         )
+    except LLMConfigurationError:
+        # Says exactly what is wrong already; relabelling it as a parsing
+        # problem would send the user to re-upload a file that is fine.
+        raise
     except LLMServiceError:
-        logger.warning("Job parsing response failed schema validation after every attempt", exc_info=True)
+        logger.warning("Job parsing failed after every attempt", exc_info=True)
         raise LLMServiceError("We couldn't read this job description. Please try again.") from None

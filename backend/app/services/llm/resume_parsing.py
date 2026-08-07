@@ -1,7 +1,7 @@
 import logging
 
 from app.core.config import get_settings
-from app.core.exceptions import LLMServiceError
+from app.core.exceptions import LLMConfigurationError, LLMServiceError
 from app.schemas.resume import ParsedResumeData
 from app.services.llm.client import call_structured
 from app.services.llm.prompts import resume_parsing_prompt
@@ -23,6 +23,10 @@ def parse_resume(raw_text: str) -> ParsedResumeData:
             # Extraction, not reasoning: every field is already in the document.
             thinking_budget=settings.gemini_extractive_thinking_budget,
         )
+    except LLMConfigurationError:
+        # Says exactly what is wrong already; relabelling it as a parsing
+        # problem would send the user to re-upload a file that is fine.
+        raise
     except LLMServiceError:
-        logger.warning("Resume parsing response failed schema validation after every attempt", exc_info=True)
+        logger.warning("Resume parsing failed after every attempt", exc_info=True)
         raise LLMServiceError("We couldn't read this resume. Please try uploading it again.") from None

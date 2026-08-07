@@ -13,7 +13,11 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.llm.providers.base import PermanentProviderError, TransientProviderError
+from app.services.llm.providers.base import (
+    PermanentProviderError,
+    ProviderConfigurationError,
+    TransientProviderError,
+)
 from app.services.llm.providers.gemini import GeminiProvider
 
 
@@ -143,8 +147,21 @@ def test_a_model_that_rejects_the_budget_falls_back_instead_of_failing(caplog):
 
 
 def test_an_unrelated_rejection_is_not_retried():
-    """A bad key must still fail fast — the fallback is narrow on purpose."""
+    """A bad key must still fail fast — the thinking fallback is narrow on
+    purpose, and a configuration error is a permanent one."""
     bad_key = Exception("401 PERMISSION_DENIED: API key not valid")
 
-    with pytest.raises(PermanentProviderError):
+    with pytest.raises(ProviderConfigurationError) as exc:
         _generate(GeminiProvider("k"), 0, side_effect=[bad_key])
+    assert isinstance(exc.value, PermanentProviderError)
+
+
+def test_an_unknown_model_is_a_configuration_error_not_a_transient_blip():
+    """A 404 was classified transient, so an unreachable model name burned two
+    attempts per key insisting the service was temporarily unavailable."""
+    missing_model = Exception(
+        "404 NOT_FOUND: models/gemini-3-flash is not found for API version v1beta"
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="GEMINI_LLM_MODEL"):
+        _generate(GeminiProvider("k"), None, side_effect=[missing_model])

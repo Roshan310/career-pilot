@@ -12,11 +12,12 @@ import pytest
 from pydantic import BaseModel
 
 from app.core.config import Settings
-from app.core.exceptions import LLMServiceError
+from app.core.exceptions import LLMConfigurationError, LLMServiceError
 from app.services.llm import client
 from app.services.llm.providers import build_provider_chain
 from app.services.llm.providers.base import (
     PermanentProviderError,
+    ProviderConfigurationError,
     RateLimitedError,
     TransientProviderError,
 )
@@ -447,3 +448,66 @@ def test_exhausting_every_key_on_schema_failures_does_not_leak_the_payload():
             structured_with([provider])
 
     assert "0.25" not in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# Misconfiguration is not "try again"
+#
+# A wrong GEMINI_LLM_MODEL produced a 404, which classify() called transient. It
+# was retried twice per key, reported as "temporarily unavailable", and the
+# resume parser relabelled it "We couldn't read this resume. Please try
+# uploading it again." — advice that could never work, for a file that was fine.
+# --------------------------------------------------------------------------
+
+
+def test_an_unknown_model_is_reported_as_misconfiguration(caplog):
+    missing = ProviderConfigurationError("gemini", "model not found — check GEMINI_LLM_MODEL")
+    provider = FakeProvider("gemini", [missing])
+
+    with caplog.at_level(logging.ERROR, logger="app.services.llm.client"):
+        with pytest.raises(LLMConfigurationError) as exc:
+            run_with([provider])
+
+    assert "administrator" in str(exc.value)
+    assert "retrying will not help" in str(exc.value)
+    # Never retried: every key reads the same model name.
+    assert provider.calls == 1
+    # The operator gets the actionable detail; the API caller does not.
+    assert "GEMINI_LLM_MODEL" in caplog.text
+    assert "GEMINI_LLM_MODEL" not in str(exc.value)
+
+
+def test_misconfiguration_does_not_waste_the_second_key():
+    """Failing over cannot help — the model name is the same for both."""
+    primary = FakeProvider("gemini", [ProviderConfigurationError("gemini", "model not found")])
+    fallback = FakeProvider("gemini-2", [ProviderConfigurationError("gemini-2", "model not found")])
+
+    with pytest.raises(LLMConfigurationError):
+        run_with([primary, fallback])
+
+    assert primary.calls == 1 and fallback.calls == 1
+
+
+def test_a_genuine_outage_is_still_reported_as_temporary():
+    """The distinction must not swallow real transient failures."""
+    provider = FakeProvider("gemini", [TransientProviderError("gemini", "503")] * 2)
+
+    with patch.object(client.time, "sleep"):
+        with pytest.raises(LLMServiceError) as exc:
+            run_with([provider])
+
+    assert not isinstance(exc.value, LLMConfigurationError)
+    assert "temporarily unavailable" in str(exc.value)
+
+
+def test_a_mixed_failure_is_not_called_a_misconfiguration():
+    """One key misconfigured and another merely down is not a config problem —
+    telling the user to call an administrator would be wrong."""
+    misconfigured = FakeProvider("gemini", [ProviderConfigurationError("gemini", "model not found")])
+    flaky = FakeProvider("gemini-2", [TransientProviderError("gemini-2", "503")] * 2)
+
+    with patch.object(client.time, "sleep"):
+        with pytest.raises(LLMServiceError) as exc:
+            run_with([misconfigured, flaky])
+
+    assert not isinstance(exc.value, LLMConfigurationError)

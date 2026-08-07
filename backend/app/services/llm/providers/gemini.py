@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.services.llm.prompts import TRANSCRIPTION_PROMPT
 from app.services.llm.providers.base import (
     PermanentProviderError,
+    ProviderConfigurationError,
     RateLimitedError,
     TransientProviderError,
 )
@@ -205,8 +206,15 @@ def classify(exc: Exception, provider: str = "gemini") -> Exception:
     text = str(exc)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
         return RateLimitedError(provider, f"rate limited: {text[:200]}")
+    if "404" in text or "NOT_FOUND" in text or "is not found for API version" in text:
+        # The model name is wrong. Every key in the chain reads the same setting,
+        # so retrying and failing over are both guaranteed to fail identically —
+        # this used to be classified transient and burned four attempts saying so.
+        return ProviderConfigurationError(
+            provider, f"model not found — check GEMINI_LLM_MODEL: {text[:200]}"
+        )
     if "401" in text or "403" in text or "PERMISSION_DENIED" in text or "API key" in text:
-        return PermanentProviderError(provider, f"auth failed: {text[:200]}")
+        return ProviderConfigurationError(provider, f"auth failed — check the API key: {text[:200]}")
     if "400" in text or "INVALID_ARGUMENT" in text:
         return PermanentProviderError(provider, f"rejected request: {text[:200]}")
     return TransientProviderError(provider, text[:200])

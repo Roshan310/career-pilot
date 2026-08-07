@@ -43,9 +43,20 @@ class RateLimitedError(TransientProviderError):
 
 
 class PermanentProviderError(ProviderError):
-    """Retrying the same provider cannot help: bad API key, no credit, a request
-    this provider will always reject. Skip straight to the next provider —
-    burning a retry here just adds latency to every single call."""
+    """Retrying the same provider cannot help: no credit, a request this
+    provider will always reject. Skip straight to the next provider — burning a
+    retry here just adds latency to every single call."""
+
+
+class ProviderConfigurationError(PermanentProviderError):
+    """The provider is set up wrong: unknown model, bad or revoked key.
+
+    A *subclass* of permanent, so every existing handler still catches it — but
+    distinguishable, because failing over to the next key cannot help either:
+    every provider in the chain reads the same model name. The user-facing
+    consequence differs too. "Try again" is advice that can never work, and the
+    operator needs to know which setting to change.
+    """
 
 
 @runtime_checkable

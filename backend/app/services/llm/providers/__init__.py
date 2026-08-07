@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.services.llm.providers.base import (
     LLMProvider,
     PermanentProviderError,
+    ProviderConfigurationError,
     ProviderError,
     RateLimitedError,
     TransientProviderError,
@@ -22,6 +23,7 @@ __all__ = [
     "TransientProviderError",
     "RateLimitedError",
     "PermanentProviderError",
+    "ProviderConfigurationError",
     "GeminiProvider",
     "build_provider_chain",
 ]
