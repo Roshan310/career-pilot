@@ -39,7 +39,12 @@ from app.schemas.interview import (
 from app.services import interview_state_machine as sm
 from app.services.llm.answer_evaluation import evaluate_answer
 from app.services.llm.question_generation import generate_question_plan
-from app.services.report_findings import build_findings, turn_average, turn_weight
+from app.services.report_findings import (
+    build_findings,
+    dimension_averages,
+    turn_average,
+    turn_weight,
+)
 from app.services.speech_metrics import aggregate_speech_metrics, compute_speech_metrics
 
 logger = logging.getLogger(__name__)
@@ -291,6 +296,10 @@ def aggregate_report(turns: list[InterviewTurn], missing_skills: list[dict]) -> 
         # the LLM layer, and so it can never accidentally recompute gap_coverage
         # (which depends on the match, not on the turns).
         **build_findings(turns),
+        # Stored, not derived on read: the findings only mention a dimension when
+        # it qualified as a strength or weakness, so a flat 3.0/3.0/3.0 session
+        # would otherwise leave no trace to plot.
+        "dimension_averages": dimension_averages(turns),
         "gap_coverage": gap_coverage,
         # Rolled up over every turn with measurable speech, including ones the
         # LLM couldn't score — delivery is measurable even when content isn't.

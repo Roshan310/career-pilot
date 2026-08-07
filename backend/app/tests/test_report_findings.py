@@ -494,3 +494,56 @@ def test_a_malformed_score_still_counts_toward_gap_coverage():
 
     assert result["gap_coverage"]["addressed"] == ["Redis"]
     assert result["gap_coverage"]["still_open"] == []
+
+
+# --------------------------------------------------------------------------
+# Per-dimension averages are persisted, not derived from the findings
+#
+# The findings only name a dimension when it qualified as a strength or a
+# weakness, so a flat session left nothing to plot a trend from.
+# --------------------------------------------------------------------------
+
+
+def test_dimension_averages_cover_dimensions_the_findings_never_mention():
+    """The gap this closes.
+
+    structure is absolutely strong and relevance absolutely weak, so both get a
+    finding. specificity sits between the thresholds and gets none — and because
+    an absolute strength exists, the relative fallback never runs either. Its
+    average still has to be plottable.
+    """
+    turns = [make_turn(1, (5, 3, 2)), make_turn(2, (4, 3, 2))]
+
+    findings = rf.build_findings(turns)
+    mentioned = {
+        f["dimension"] for f in findings["strengths"] + findings["improvement_areas"] if f["dimension"]
+    }
+    assert "specificity" not in mentioned
+
+    averages = rf.dimension_averages(turns)
+    assert averages == {"structure": 4.5, "specificity": 3.0, "relevance": 2.0}
+
+
+def test_dimension_averages_omit_a_dimension_nothing_scored():
+    averages = rf.dimension_averages([make_turn(1, {"structure": 4})])
+    assert set(averages) == {"structure"}
+
+
+def test_dimension_averages_are_empty_for_an_unscored_session():
+    assert rf.dimension_averages([make_turn(1, skipped=True)]) == {}
+
+
+def test_dimension_averages_weight_follow_ups_like_the_headline_score():
+    """Same weighting as overall_score, or the two numbers disagree on the page."""
+    turns = [make_turn(1, (4, 4, 4), question_type="main"),
+             make_turn(2, (2, 2, 2), question_type="follow_up")]
+
+    averages = rf.dimension_averages(turns)
+    overall = aggregate_report(turns, [])["overall_score"]
+
+    assert averages["structure"] == round(overall, 2)
+
+
+def test_the_report_persists_dimension_averages():
+    report = aggregate_report([make_turn(1, (5, 4, 3))], [])
+    assert report["dimension_averages"] == {"structure": 5.0, "specificity": 4.0, "relevance": 3.0}

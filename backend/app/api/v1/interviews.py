@@ -125,6 +125,7 @@ async def list_interviews(
             JobDescription.title,
             JobDescription.company,
             SessionReport.overall_score,
+            SessionReport.dimension_averages,
         )
         .outerjoin(JobDescription, InterviewSession.job_id == JobDescription.id)
         .outerjoin(SessionReport, SessionReport.session_id == InterviewSession.id)
@@ -133,7 +134,7 @@ async def list_interviews(
     )
 
     items: list[InterviewListItem] = []
-    for session, title, company, overall_score in result.all():
+    for session, title, company, overall_score, dimension_averages in result.all():
         duration_minutes = None
         if session.ended_at is not None:
             duration_minutes = round((session.ended_at - session.started_at).total_seconds() / 60, 1)
@@ -145,6 +146,7 @@ async def list_interviews(
                 job_title=title,
                 job_company=company,
                 overall_score=overall_score,
+                dimension_averages=dimension_averages,
                 started_at=session.started_at,
                 ended_at=session.ended_at,
                 duration_minutes=duration_minutes,

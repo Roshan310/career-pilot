@@ -212,6 +212,8 @@ export interface InterviewListItem {
   job_title: string | null;
   job_company: string | null;
   overall_score: number | null;
+  /** {structure, specificity, relevance} out of 5. Null on reports written before this was stored. */
+  dimension_averages: Record<string, number> | null;
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -380,6 +382,7 @@ export interface SessionReport {
   overall_score: number | null;
   strengths: ReportItem[] | null;
   improvement_areas: ReportItem[] | null;
+  dimension_averages: Record<string, number> | null;
   gap_coverage: { addressed: string[]; still_open: string[] } | null;
   speech_metrics: SpeechMetrics | null;
   created_at: string;

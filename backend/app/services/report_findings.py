@@ -93,6 +93,21 @@ def turn_average(turn: InterviewTurn) -> float | None:
     return sum(scores) / len(scores) if scores else None
 
 
+def dimension_averages(turns: list[InterviewTurn]) -> dict[str, float]:
+    """`{dimension: average}`, rounded, over the turns that were actually scored.
+
+    Public because the report persists this: the per-dimension trend across
+    sessions ("specificity 2.3 -> 3.8") is the strongest reason to practise
+    again, and it cannot be reconstructed from the stored findings — those only
+    carry a dimension when it happened to qualify as a strength or a weakness.
+    """
+    scored = [t for t in turns if t.answer_transcript is not None and turn_average(t) is not None]
+    return {
+        dimension: round(average, 2)
+        for dimension, (average, _count) in _dimension_averages(scored).items()
+    }
+
+
 def _finding(
     kind: str,
     code: str,

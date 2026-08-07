@@ -214,6 +214,9 @@ class InterviewListItem(BaseModel):
     job_title: str | None
     job_company: str | None
     overall_score: float | None
+    # Lets the history list plot a per-dimension trend without one report fetch
+    # per session.
+    dimension_averages: dict | None = None
     started_at: datetime
     ended_at: datetime | None
     duration_minutes: float | None
@@ -226,6 +229,7 @@ class SessionReportResponse(BaseModel):
     strengths: list | None
     improvement_areas: list | None
     gap_coverage: dict | None
+    dimension_averages: dict | None = None
     speech_metrics: dict | None
     created_at: datetime
 
