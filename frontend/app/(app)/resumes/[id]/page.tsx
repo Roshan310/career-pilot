@@ -49,7 +49,7 @@ export default function ResumeDetailPage() {
         title={resume.file_name || "Resume"}
         subtitle={`Version ${resume.version} · Uploaded ${formatDate(resume.created_at)}`}
         action={
-          <Button onClick={() => router.push("/analysis")}>Analyze this resume</Button>
+          <Button onClick={() => router.push(`/analysis?resume=${resume.id}`)}>Analyze this resume</Button>
         }
       />
 

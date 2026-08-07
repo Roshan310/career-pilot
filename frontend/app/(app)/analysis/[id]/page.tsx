@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, CheckCircle2, Lightbulb, Loader2, TriangleAlert } from "lucide-react";
+import { AlertCircle, CheckCircle2, Lightbulb, Loader2, Mic, TriangleAlert } from "lucide-react";
 import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -138,6 +138,26 @@ export default function MatchReportPage() {
               <SubScore label="Skill Overlap" score={match.skill_overlap_score} />
               <SubScore label="Experience Match" score={match.experience_match_score} />
               <SubScore label="Keyword Density" score={match.keyword_density_score} />
+            </div>
+
+            {/* The whole point of the gap analysis. Carrying all three ids is
+                what makes the interview's gap-analysis option appear: it only
+                offers matches whose resume AND job equal the current selection. */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Button
+                onClick={() =>
+                  router.push(
+                    `/interview?resume=${match.resume_id}&job=${match.job_id}&match=${match.id}`,
+                  )
+                }
+              >
+                <Mic size={18} /> Practice these gaps
+              </Button>
+              <span className="text-[13px] text-text-muted">
+                {missing.length
+                  ? `We'll build questions around your ${missing.length} gap${missing.length === 1 ? "" : "s"}.`
+                  : "Rehearse this role with questions from your resume."}
+              </span>
             </div>
           </div>
         </div>

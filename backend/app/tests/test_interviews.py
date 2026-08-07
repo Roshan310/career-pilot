@@ -792,3 +792,42 @@ async def test_a_second_report_row_cannot_be_inserted(authed_client, resume_job_
     with pytest.raises(IntegrityError):
         await db_session.commit()
     await db_session.rollback()
+
+
+async def test_session_response_says_what_the_interview_was_about(authed_client, resume_job_match):
+    """resume_id / job_id / match_id on the session response.
+
+    The report page needs these to name the role and to offer "Practice again"
+    with the pairing pre-selected — without them its heading was the literal
+    string "Interview Feedback" and the ids were unreachable, so the only next
+    step was a link back to the list.
+    """
+    _, resume, job, match = resume_job_match
+    with patch("app.services.interview_service.generate_question_plan", return_value=CANNED_PLAN):
+        created = await authed_client.post(
+            "/api/interviews", json=_create_interview_payload(resume, job, match)
+        )
+    assert created.status_code == 201, created.text
+
+    body = created.json()
+    assert body["resume_id"] == str(resume.id)
+    assert body["job_id"] == str(job.id)
+    assert body["match_id"] == str(match.id)
+
+    # And on re-fetch, which is the path the report page actually takes.
+    fetched = (await authed_client.get(f"/api/interviews/{body['id']}")).json()
+    assert fetched["job_id"] == str(job.id)
+
+
+async def test_match_id_is_null_when_the_interview_had_no_gap_analysis(authed_client, resume_job_match):
+    """An interview started without a prior match is legal; the practice link
+    just omits the match parameter rather than sending "None"."""
+    _, resume, job, _ = resume_job_match
+    with patch("app.services.interview_service.generate_question_plan", return_value=CANNED_PLAN):
+        created = await authed_client.post(
+            "/api/interviews", json={"resume_id": str(resume.id), "job_id": str(job.id)}
+        )
+
+    body = created.json()
+    assert body["match_id"] is None
+    assert body["resume_id"] == str(resume.id)

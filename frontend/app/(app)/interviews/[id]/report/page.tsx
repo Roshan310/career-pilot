@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Target, ThumbsUp, TriangleAlert } from "lucide-react";
+import { Mic, Target, ThumbsUp, TriangleAlert } from "lucide-react";
 import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { FindingList } from "@/components/interview/report-findings";
 import { SpeechMetricsCard } from "@/components/interview/speech-metrics-card";
 import { TurnBreakdown } from "@/components/interview/turn-breakdown";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useInterview, useInterviewReport } from "@/hooks/use-data";
+import { useInterview, useInterviewReport, useJob } from "@/hooks/use-data";
 import { ratingToPct } from "@/lib/utils";
 import { markReportReviewed } from "@/hooks/use-reviewed-reports";
 
@@ -24,6 +24,15 @@ export default function InterviewReportPage() {
   // The session carries the per-question transcripts and scores; the report
   // carries the aggregate. Both are needed for the full picture.
   const { data: session } = useInterview(id);
+  // Names the role this interview was for. The heading was the literal string
+  // "Interview Feedback" and that context appeared nowhere on the page.
+  const { data: job } = useJob(session?.job_id ?? "");
+
+  /** Re-run the same pairing. Carries the ids so the picker arrives filled in. */
+  const practiceHref = session?.resume_id && session?.job_id
+    ? `/interview?resume=${session.resume_id}&job=${session.job_id}` +
+      (session.match_id ? `&match=${session.match_id}` : "")
+    : "/interview";
 
   // Ticks "Feedback reviewed" on the dashboard. Only once the report actually
   // rendered — reaching the route with an error state is not reading it.
@@ -79,9 +88,24 @@ export default function InterviewReportPage() {
           </ProgressRing>
           <div className="flex-1">
             <h1 className="text-h3 text-text-primary">Interview Feedback</h1>
+            {(job?.title || job?.company) && (
+              <p className="mt-1 text-[15px] font-medium text-text-primary">
+                {[job.title, job.company].filter(Boolean).join(" · ")}
+              </p>
+            )}
             <p className="mt-1.5 text-[15px] text-text-secondary">
               Aggregate score across all answered questions, weighting main questions above follow-ups.
             </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Button onClick={() => router.push(practiceHref)}>
+                <Mic size={18} /> Practice again
+              </Button>
+              <span className="text-[13px] text-text-muted">
+                {stillOpen.length
+                  ? `${stillOpen.length} gap${stillOpen.length === 1 ? "" : "s"} still to cover.`
+                  : "Fresh questions, same role."}
+              </span>
+            </div>
           </div>
         </div>
       </Card>
@@ -129,7 +153,18 @@ export default function InterviewReportPage() {
             <p className="mb-2 text-[14px] font-medium text-text-secondary">Still Open</p>
             <div className="flex flex-wrap gap-2">
               {stillOpen.length ? (
-                stillOpen.map((g) => <Badge key={g} variant="warning">{g}</Badge>)
+                stillOpen.map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => router.push(practiceHref)}
+                    title={`Practise ${g} again`}
+                    className="rounded-badge focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40"
+                  >
+                    <Badge variant="warning" className="cursor-pointer hover:opacity-80">
+                      {g}
+                    </Badge>
+                  </button>
+                ))
               ) : (
                 <span className="text-[14px] text-text-muted">None</span>
               )}

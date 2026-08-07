@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,21 +14,41 @@ import { RecentAnalyses } from "@/components/dashboard/recent-analyses";
 import { UploadResumeDialog } from "@/components/resume/upload-resume-dialog";
 import { CreateJobDialog } from "@/components/job/create-job-dialog";
 import { useJobs, useMatches, useResumes } from "@/hooks/use-data";
+import { useDropUnknownId, usePrefill } from "@/hooks/use-prefill";
 import { createMatch } from "@/lib/api/matches";
 import { ApiError } from "@/lib/api/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
+/**
+ * `useSearchParams` lives in the inner component so the Suspense boundary keeps
+ * this route statically prerendered. Without the boundary Next opts the whole
+ * page into dynamic rendering.
+ */
 export default function AnalysisPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-64 rounded-card" />}>
+      <AnalysisPageInner />
+    </Suspense>
+  );
+}
+
+function AnalysisPageInner() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: resumes = [] } = useResumes();
   const { data: jobs = [] } = useJobs();
   const { data: matches = [], isLoading: matchesLoading } = useMatches();
 
-  const [resumeId, setResumeId] = useState("");
-  const [jobId, setJobId] = useState("");
+  // Prefilled when arriving from a resume or job detail page.
+  const prefill = usePrefill();
+  const [resumeId, setResumeId] = useState(prefill.resume);
+  const [jobId, setJobId] = useState(prefill.job);
   const [running, setRunning] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [jobOpen, setJobOpen] = useState(false);
+
+  useDropUnknownId(resumeId, resumes, () => setResumeId(""));
+  useDropUnknownId(jobId, jobs, () => setJobId(""));
 
   // What is still missing, so the disabled button isn't a dead end.
   const blockedBy = !resumeId && !jobId

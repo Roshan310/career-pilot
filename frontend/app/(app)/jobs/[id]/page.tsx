@@ -49,7 +49,7 @@ export default function JobDetailPage() {
       <PageHeader
         title={job.title || "Untitled role"}
         subtitle={`${job.company || "—"} · Added ${formatDate(job.created_at)}`}
-        action={<Button onClick={() => router.push("/analysis")}>Match a resume</Button>}
+        action={<Button onClick={() => router.push(`/analysis?job=${job.id}`)}>Match a resume</Button>}
       />
 
       {/* Parsed requirements */}

@@ -246,6 +246,9 @@ export interface TurnDetail {
 
 export interface InterviewSession {
   id: string;
+  resume_id: string | null;
+  job_id: string | null;
+  match_id: string | null;
   mode: string;
   status: InterviewStatus | string;
   question_plan: unknown[] | null;

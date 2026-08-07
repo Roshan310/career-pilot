@@ -128,6 +128,12 @@ class TurnDetail(BaseModel):
 
 class InterviewSessionResponse(BaseModel):
     id: uuid.UUID
+    # What this interview was *about*. Direct columns, so from_attributes picks
+    # them up for free. Without them the report page could not say which role it
+    # was for, nor offer to practise the same pairing again.
+    resume_id: uuid.UUID | None = None
+    job_id: uuid.UUID | None = None
+    match_id: uuid.UUID | None = None
     mode: str
     status: str
     question_plan: list | None

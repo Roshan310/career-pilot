@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import { RecentInterviews } from "@/components/dashboard/recent-interviews";
 import { UploadResumeDialog } from "@/components/resume/upload-resume-dialog";
 import { CreateJobDialog } from "@/components/job/create-job-dialog";
 import { useInterviews, useJobs, useMatches, useResumes } from "@/hooks/use-data";
+import { useDropUnknownId, usePrefill } from "@/hooks/use-prefill";
+import { Skeleton } from "@/components/ui/skeleton";
 import { createInterview } from "@/lib/api/interviews";
 import { ApiError } from "@/lib/api/client";
 import { isRecordingSupported } from "@/lib/voice";
@@ -29,7 +31,16 @@ const PREPARING_STEPS = [
   "Drafting questions about your gaps…",
 ];
 
+/** Suspense boundary keeps this route static — see hooks/use-prefill.ts. */
 export default function InterviewPracticePage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-64 rounded-card" />}>
+      <InterviewPracticePageInner />
+    </Suspense>
+  );
+}
+
+function InterviewPracticePageInner() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: resumes = [] } = useResumes();
@@ -37,9 +48,13 @@ export default function InterviewPracticePage() {
   const { data: matches = [] } = useMatches();
   const { data: interviews = [], isLoading: interviewsLoading } = useInterviews();
 
-  const [resumeId, setResumeId] = useState("");
-  const [jobId, setJobId] = useState("");
-  const [matchId, setMatchId] = useState("");
+  // Prefilled when arriving from a match report's "Practice these gaps", which
+  // carries all three — the gap-analysis option only appears when the match's
+  // resume and job both match the current selection.
+  const prefill = usePrefill();
+  const [resumeId, setResumeId] = useState(prefill.resume);
+  const [jobId, setJobId] = useState(prefill.job);
+  const [matchId, setMatchId] = useState(prefill.match);
   const [starting, setStarting] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -73,6 +88,9 @@ export default function InterviewPracticePage() {
   useEffect(() => {
     if (matchId && !usableMatches.some((m) => m.id === matchId)) setMatchId("");
   }, [usableMatches, matchId]);
+
+  useDropUnknownId(resumeId, resumes, () => setResumeId(""));
+  useDropUnknownId(jobId, jobs, () => setJobId(""));
 
   const resumable = interviews.filter(
     (i) => i.status === "in_progress" || i.status === "wrapping_up",
