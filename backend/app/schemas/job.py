@@ -1,11 +1,16 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.models.job_description import JOB_PRIORITIES, JOB_STATUSES
 
 settings = get_settings()
+
+JobStatus = Literal[JOB_STATUSES]  # type: ignore[valid-type]
+JobPriority = Literal[JOB_PRIORITIES]  # type: ignore[valid-type]
 
 
 class ParsedJobRequirements(BaseModel):
@@ -32,7 +37,37 @@ class JobCreateRequest(BaseModel):
     raw_text: str = Field(min_length=1, max_length=settings.max_job_description_chars)
 
 
-class JobResponse(BaseModel):
+class JobUpdateRequest(BaseModel):
+    """Every field optional — this is a PATCH.
+
+    `None` is a legitimate value for the nullable fields (clearing a deadline),
+    so callers that want to leave a field alone must omit it entirely. Use
+    `model_dump(exclude_unset=True)` at the call site, not `exclude_none`.
+    """
+
+    title: str | None = Field(default=None, max_length=300)
+    company: str | None = Field(default=None, max_length=300)
+    status: JobStatus | None = None
+    priority: JobPriority | None = None
+    applied_at: date | None = None
+    deadline: date | None = None
+    notes: str | None = Field(default=None, max_length=5000)
+    source_url: str | None = Field(default=None, max_length=2000)
+
+
+class JobTracking(BaseModel):
+    """Shared by the detail and list shapes so they cannot drift."""
+
+    status: str
+    priority: str
+    applied_at: date | None
+    deadline: date | None
+    notes: str | None
+    source_url: str | None
+    updated_at: datetime
+
+
+class JobResponse(JobTracking):
     id: uuid.UUID
     title: str | None
     company: str | None
@@ -43,7 +78,7 @@ class JobResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class JobListItem(BaseModel):
+class JobListItem(JobTracking):
     id: uuid.UUID
     title: str | None
     company: str | None

@@ -30,7 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Resume Analysis", href: "/analysis", icon: FileSearch },
   { label: "Resume Library", href: "/resumes", icon: FolderClosed },
-  { label: "Job Descriptions", href: "/jobs", icon: Briefcase },
+  { label: "Applications", href: "/jobs", icon: Briefcase },
   { label: "Interview Practice", href: "/interview", icon: Mic },
   { label: "Interview History", href: "/interviews", icon: Clock },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },

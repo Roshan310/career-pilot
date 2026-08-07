@@ -75,7 +75,32 @@ export interface ParsedJobRequirements {
   key_responsibilities: string[];
 }
 
-export interface Job {
+/** The application pipeline, in board order. Mirrors JOB_STATUSES on the API. */
+export const JOB_STATUSES = [
+  "saved",
+  "applied",
+  "screening",
+  "interviewing",
+  "offer",
+  "rejected",
+] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export const JOB_PRIORITIES = ["low", "normal", "high"] as const;
+export type JobPriority = (typeof JOB_PRIORITIES)[number];
+
+/** Application state, shared by the detail and list shapes. */
+export interface JobTracking {
+  status: JobStatus;
+  priority: JobPriority;
+  applied_at: string | null;
+  deadline: string | null;
+  notes: string | null;
+  source_url: string | null;
+  updated_at: string;
+}
+
+export interface Job extends JobTracking {
   id: string;
   title: string | null;
   company: string | null;
@@ -84,7 +109,7 @@ export interface Job {
   created_at: string;
 }
 
-export interface JobListItem {
+export interface JobListItem extends JobTracking {
   id: string;
   title: string | null;
   company: string | null;
@@ -95,6 +120,21 @@ export interface JobCreateRequest {
   title?: string | null;
   company?: string | null;
   raw_text: string;
+}
+
+/**
+ * PATCH body. Every key optional, and omitting a key is NOT the same as sending
+ * null — null clears the field, omission leaves it alone.
+ */
+export interface JobUpdateRequest {
+  title?: string | null;
+  company?: string | null;
+  status?: JobStatus;
+  priority?: JobPriority;
+  applied_at?: string | null;
+  deadline?: string | null;
+  notes?: string | null;
+  source_url?: string | null;
 }
 
 // ---- Matches ----
