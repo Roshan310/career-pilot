@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+
+# Environment variables
+# NOTE: .env.example files are deliberately NOT ignored — the README's first
+# quickstart step is `cp backend/.env.example backend/.env`, which is impossible
+# if the template isn't in the repository.
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build outputs
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+.cache/
+.tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg
+
+# Working notes, kept local on purpose
+docs/
+SPECS.md
+AGENT.md
+.claude
