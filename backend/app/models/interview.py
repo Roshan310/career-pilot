@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,6 +44,11 @@ class InterviewTurn(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    __table_args__ = (
+        # `get_turn` looks up exactly this pair on every answer submission.
+        Index("idx_interview_turns_session_turn", "session_id", "turn_number"),
+    )
+
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("interview_sessions.id", ondelete="CASCADE"),
@@ -69,8 +74,17 @@ class SessionReport(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # A session has exactly one report. Enforced in the database because
+    # `complete_session`'s status check is not atomic: two concurrent completes
+    # both passed it and both inserted, after which the report endpoint's
+    # `scalar_one_or_none()` raised MultipleResultsFound *permanently* for that
+    # user. The constraint also supplies the index for the outer join that every
+    # GET /api/interviews performs.
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("interview_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     overall_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     strengths: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

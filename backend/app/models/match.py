@@ -10,7 +10,12 @@ from app.db.base import Base
 
 class Match(Base):
     __tablename__ = "matches"
-    __table_args__ = (Index("idx_matches_resume_job", "resume_id", "job_id"),)
+    __table_args__ = (
+        Index("idx_matches_resume_job", "resume_id", "job_id"),
+        # The composite above is unusable for a job_id-only lookup, which is what
+        # the GET /api/matches join does.
+        Index("idx_matches_job", "job_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -36,4 +41,13 @@ class Match(Base):
     ats_issues: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Lets the stale-match sweep tell "queued a moment ago" from "the worker died
+    # holding this". Without it a row stuck in pending/processing was
+    # indistinguishable from a healthy one and stayed that way forever.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )

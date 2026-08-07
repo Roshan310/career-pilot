@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
@@ -71,11 +72,17 @@ class QuestionPlan(BaseModel):
         return v
 
 
+# Only jd_specific is implemented; behavioral/technical currently route through
+# the same generator. Constrained anyway so an unknown value is rejected at the
+# edge rather than silently stored and never read.
+InterviewMode = Literal["jd_specific", "behavioral", "technical"]
+
+
 class InterviewCreateRequest(BaseModel):
     resume_id: uuid.UUID
     job_id: uuid.UUID
     match_id: uuid.UUID | None = None
-    mode: str = "jd_specific"
+    mode: InterviewMode = "jd_specific"
 
 
 class CurrentQuestion(BaseModel):
@@ -150,14 +157,26 @@ class TranscriptSegment(BaseModel):
     start_ms: float = Field(ge=0)
     end_ms: float = Field(ge=0)
 
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "TranscriptSegment":
+        # Both bounds were validated individually but never against each other,
+        # so a reversed segment produced a negative gap and corrupted the pause
+        # metrics derived from it.
+        if self.end_ms < self.start_ms:
+            raise ValueError("end_ms must not be before start_ms")
+        return self
+
 
 class TurnSubmitRequest(BaseModel):
     question_number: int = Field(ge=1)
-    answer_transcript: str
-    duration: float = Field(ge=0)
+    answer_transcript: str = Field(max_length=100_000)
+    # Upper bound is the interview hard cap with room to spare. Without one, a
+    # client claiming duration=0.001 produced an absurd words-per-minute figure,
+    # which then drove the pace findings on the report.
+    duration: float = Field(ge=0, le=3600)
     # Which voice layer produced answer_transcript. "server_stt" is unused today —
     # it's the value a future WebSocket/streaming-STT transport will send.
-    source: str = "browser_speech"  # browser_speech | typed | server_stt
+    source: Literal["browser_speech", "typed", "server_stt"] = "browser_speech"
     segments: list[TranscriptSegment] | None = None
     # §7.2: no speech captured after the retry prompt. Advances the interview
     # without an evaluation LLM call.

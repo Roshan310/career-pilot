@@ -86,3 +86,23 @@ async def test_get_job_not_owned_returns_404(authed_client, mocked_llm_and_embed
 
     response = await authed_client.get(f"/api/jobs/{other_job.id}")
     assert response.status_code == 404
+
+
+async def test_a_sub_year_experience_requirement_is_accepted(authed_client):
+    """Regression: `years_experience_required` was `int`, so a JD asking for
+    three months of experience produced 0.25 from the model and a 502 that no
+    retry could clear — the job simply could not be saved."""
+    parsed = ParsedJobRequirements(
+        required_skills=["Python"],
+        seniority_level="intern",
+        years_experience_required=0.25,
+    )
+
+    with patch("app.api.v1.jobs.parse_job", return_value=parsed), \
+         patch("app.api.v1.jobs.embed_text", return_value=CANNED_EMBEDDING):
+        response = await authed_client.post(
+            "/api/jobs", json={"title": "Intern", "raw_text": "3 months of Python experience required."}
+        )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["parsed_requirements"]["years_experience_required"] == 0.25

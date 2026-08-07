@@ -2,12 +2,12 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ServiceUnavailableError, UnprocessableError
 from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.models.interview import InterviewSession, SessionReport
@@ -26,6 +26,30 @@ from app.schemas.interview import (
 )
 from app.services import interview_service, transcription, tts
 from app.services.usage_service import check_limit, increment
+
+_AUDIO_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_capped_audio(request: Request, audio: UploadFile) -> bytes:
+    """Read an answer recording, refusing to buffer past the transcription limit.
+
+    `await audio.read()` pulled the whole body into memory first and only then
+    handed it to `transcribe_answer`, which is where the 25MB check lives — so
+    the check could not protect the thing it was there to protect.
+    """
+    limit = transcription.MAX_AUDIO_BYTES
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        raise UnprocessableError("Audio file is too large.")
+
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await audio.read(_AUDIO_CHUNK_BYTES):
+        total += len(chunk)
+        if total > limit:
+            raise UnprocessableError("Audio file is too large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +205,7 @@ async def get_turn_audio(
         audio = await asyncio.to_thread(tts.question_audio, session.id, turn_number, turn.question_text)
     except tts.TTSUnavailableError as exc:
         logger.info("question audio unavailable for %s turn %s: %s", session_id, turn_number, exc)
-        raise HTTPException(status_code=503, detail="Question audio is unavailable.") from exc
+        raise ServiceUnavailableError("Question audio is unavailable.") from exc
 
     return Response(
         content=audio,
@@ -208,7 +232,7 @@ async def transcribe_answer(
     """
     await _get_owned_session(db, session_id, current_user)  # ownership check
 
-    content = await audio.read()
+    content = await _read_capped_audio(request, audio)
     transcript = await asyncio.to_thread(
         transcription.transcribe_answer, content, audio.content_type
     )
@@ -216,7 +240,12 @@ async def transcribe_answer(
 
 
 @router.post("/{session_id}/complete", response_model=SessionReportResponse)
+# Was the only unlimited write endpoint, and it runs a full report aggregation
+# on every call — which is also what made the duplicate-report race easy to hit.
+# Generous, because completing is idempotent and a client retry is legitimate.
+@limiter.limit("20/minute")
 async def complete_interview(
+    request: Request,
     session_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -226,7 +255,9 @@ async def complete_interview(
 
 
 @router.post("/{session_id}/abandon", response_model=InterviewSessionResponse)
+@limiter.limit("20/minute")
 async def abandon_interview(
+    request: Request,
     session_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

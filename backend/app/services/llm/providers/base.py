@@ -25,9 +25,21 @@ class ProviderError(Exception):
 
 
 class TransientProviderError(ProviderError):
-    """Worth another attempt on the same provider: rate limits, 5xx, timeouts,
-    empty responses. Malformed JSON is folded in here too (the client raises it),
+    """Worth another attempt on the same provider: 5xx, timeouts, empty
+    responses. Malformed JSON is folded in here too (the client raises it),
     since the model is non-deterministic and a second sample often parses."""
+
+
+class RateLimitedError(TransientProviderError):
+    """Out of quota on this key, specifically.
+
+    Still transient — the quota refills — but it wants different handling from a
+    generic blip. Each API key is a separate project with a separate per-minute
+    allowance, so when another key is available the fastest path is to switch to
+    it *now*; sleeping first would delay a call that was always going to succeed
+    elsewhere. Backing off only makes sense once there is nothing left to fail
+    over to.
+    """
 
 
 class PermanentProviderError(ProviderError):
@@ -63,5 +75,16 @@ class LLMProvider(Protocol):
         Same error contract as `generate`. Kept on this protocol rather than in a
         separate one because it shares the thing that matters — the API key, and
         therefore the quota the failover is routing around.
+        """
+        ...
+
+    def embed(self, text: str, dimensions: int) -> list[float]:
+        """A vector of exactly `dimensions` floats.
+
+        Same error contract again. Unlike the other two, this one carries a
+        constraint the protocol cannot express: only providers sharing an
+        embedding model may appear in the same chain, because vectors from
+        different models are not comparable and mixing them silently corrupts
+        similarity search.
         """
         ...

@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -131,8 +132,64 @@ async def test_well_answered_session_completes_without_followups(authed_client, 
     assert complete_response.status_code == 200, complete_response.text
     report = complete_response.json()
     assert report["overall_score"] == 5.0
-    assert len(report["strengths"]) == len(QUESTIONS)
+    # Findings are patterns across the session, not one entry per question — six
+    # flawless answers are three strong dimensions plus full participation, not
+    # six identical rows. See report_findings.py.
+    assert [f["code"] for f in report["strengths"]] == [
+        "structure_strong",
+        "specificity_strong",
+        "relevance_strong",
+        "all_questions_answered",
+    ]
     assert report["improvement_areas"] == []
+
+
+async def test_weakly_answered_session_reports_what_went_wrong(authed_client, resume_job_match):
+    """The bug this guards: a report whose columns were empty or listed nothing
+    but question titles, leaving the candidate with no idea what to fix."""
+    _, resume, job, match = resume_job_match
+    with patch("app.services.interview_service.generate_question_plan", return_value=CANNED_PLAN):
+        create_response = await authed_client.post(
+            "/api/interviews", json=_create_interview_payload(resume, job, match)
+        )
+    session_id = create_response.json()["id"]
+
+    with patch("app.services.interview_service.evaluate_answer") as mock_eval:
+        from app.services.llm.answer_evaluation import AnswerEvaluation
+
+        mock_eval.return_value = AnswerEvaluation(
+            **_good_evaluation(structure=2, specificity=1, relevance=2)
+        )
+
+        question_number = 1
+        session_status = "in_progress"
+        while session_status == "in_progress":
+            response = await authed_client.post(
+                f"/api/interviews/{session_id}/turns",
+                json={
+                    "question_number": question_number,
+                    "answer_transcript": "I guess I just sort of handled it.",
+                    "duration": 30.0,
+                },
+            )
+            body = response.json()
+            session_status = body["session_status"]
+            if body["next_question"]:
+                question_number = body["next_question"]["turn_number"]
+
+    report = (await authed_client.post(f"/api/interviews/{session_id}/complete")).json()
+
+    improvements = {f["code"]: f for f in report["improvement_areas"]}
+    assert set(improvements) == {"structure_weak", "specificity_weak", "relevance_weak"}
+    # Weakest first, each naming its average and a question that demonstrates it.
+    assert [f["code"] for f in report["improvement_areas"]][0] == "specificity_weak"
+    assert improvements["specificity_weak"]["average"] == 1.0
+    assert improvements["specificity_weak"]["turns_counted"] == len(QUESTIONS)
+    assert improvements["specificity_weak"]["exemplar"]["question_text"] in {
+        q["question_text"] for q in QUESTIONS
+    }
+    # And no invented consolation prize on the other side.
+    assert [f["code"] for f in report["strengths"] if f["kind"] == "dimension"] == []
 
 
 async def test_forced_followup_caps_at_max_then_advances(authed_client, resume_job_match):
@@ -679,3 +736,59 @@ async def test_transcribe_on_another_users_session_is_not_reachable(authed_clien
 
     assert response.status_code == 404
     assert call.call_count == 0
+
+
+# --------------------------------------------------------------------------
+# Completing twice
+#
+# A double-click, a retry after a dropped response, or two open tabs all send a
+# second POST /complete. Before session_reports.session_id was unique this wrote
+# a second report, and GET /report's scalar_one_or_none() then raised
+# MultipleResultsFound for that session *permanently* — the user could never see
+# their report again.
+# --------------------------------------------------------------------------
+
+
+async def test_completing_twice_returns_the_same_report(authed_client, resume_job_match):
+    _, resume, job, match = resume_job_match
+    session_id = await _start_session(authed_client, resume, job, match)
+
+    with patch("app.services.interview_service.evaluate_answer", return_value=AnswerEvaluation(**_good_evaluation())):
+        await authed_client.post(
+            f"/api/interviews/{session_id}/turns",
+            json={"question_number": 1, "answer_transcript": "A great STAR answer.", "duration": 30.0},
+        )
+
+    first = await authed_client.post(f"/api/interviews/{session_id}/complete")
+    second = await authed_client.post(f"/api/interviews/{session_id}/complete")
+
+    assert first.status_code == 200, first.text
+    # Idempotent, not a 409: "finish my interview" on an already-finished
+    # interview has an obvious correct answer.
+    assert second.status_code == 200, second.text
+    assert second.json()["id"] == first.json()["id"]
+
+    # The endpoint that used to break is still readable.
+    report = await authed_client.get(f"/api/interviews/{session_id}/report")
+    assert report.status_code == 200
+    assert report.json()["id"] == first.json()["id"]
+
+
+async def test_a_second_report_row_cannot_be_inserted(authed_client, resume_job_match, db_session):
+    """The database constraint, not just the application check.
+
+    complete_session's status guard is check-then-set and cannot be atomic, so
+    the uniqueness has to be enforced underneath it.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.interview import SessionReport
+
+    _, resume, job, match = resume_job_match
+    session_id = await _start_session(authed_client, resume, job, match)
+    await authed_client.post(f"/api/interviews/{session_id}/complete")
+
+    db_session.add(SessionReport(session_id=uuid.UUID(session_id), overall_score=1.0))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()

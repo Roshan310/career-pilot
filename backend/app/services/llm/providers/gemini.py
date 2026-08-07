@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.services.llm.prompts import TRANSCRIPTION_PROMPT
 from app.services.llm.providers.base import (
     PermanentProviderError,
+    RateLimitedError,
     TransientProviderError,
 )
 
@@ -25,7 +26,16 @@ _clients: dict[str, genai.Client] = {}
 
 def _get_client(api_key: str) -> genai.Client:
     if api_key not in _clients:
-        _clients[api_key] = genai.Client(api_key=api_key)
+        # Without an explicit timeout google-genai waits indefinitely. Combined
+        # with ATTEMPTS_PER_PROVIDER x number of keys, a single hung connection
+        # could pin a request — and, before these calls moved off the event loop,
+        # the entire worker — with no upper bound at all. ElevenLabs has had
+        # timeouts since it was added; this closes the same gap for Gemini.
+        # google-genai takes milliseconds here.
+        _clients[api_key] = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=settings.gemini_timeout_seconds * 1000),
+        )
     return _clients[api_key]
 
 
@@ -51,6 +61,28 @@ class GeminiProvider:
         if not response.text:
             raise TransientProviderError(self.name, "empty response")
         return response.text
+
+    def embed(self, text: str, dimensions: int) -> list[float]:
+        """Embed text at the column's exact width.
+
+        Note this is the one operation that is *not* vendor-neutral in practice.
+        Failing over between two keys is safe because both address the same
+        model, and therefore the same vector space; a genuinely different vendor
+        could not be added to this chain without corrupting `semantic_score`,
+        because vectors from two models are not comparable. See `embed_text`.
+        """
+        try:
+            response = _get_client(self.api_key).models.embed_content(
+                model=settings.gemini_embedding_model,
+                contents=text,
+                config=types.EmbedContentConfig(output_dimensionality=dimensions),
+            )
+        except Exception as exc:
+            raise classify(exc, self.name) from exc
+
+        if not response.embeddings:
+            raise TransientProviderError(self.name, "no embedding returned")
+        return list(response.embeddings[0].values)
 
     def transcribe(self, audio: bytes, mime_type: str) -> str:
         """Gemini takes audio as an ordinary input part, so transcription needs no
@@ -131,7 +163,7 @@ def classify(exc: Exception, provider: str = "gemini") -> Exception:
     """
     text = str(exc)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
-        return TransientProviderError(provider, f"rate limited: {text[:200]}")
+        return RateLimitedError(provider, f"rate limited: {text[:200]}")
     if "401" in text or "403" in text or "PERMISSION_DENIED" in text or "API key" in text:
         return PermanentProviderError(provider, f"auth failed: {text[:200]}")
     if "400" in text or "INVALID_ARGUMENT" in text:

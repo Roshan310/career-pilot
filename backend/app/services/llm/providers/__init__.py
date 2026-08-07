@@ -11,6 +11,7 @@ from app.services.llm.providers.base import (
     LLMProvider,
     PermanentProviderError,
     ProviderError,
+    RateLimitedError,
     TransientProviderError,
 )
 from app.services.llm.providers.gemini import GeminiProvider
@@ -19,6 +20,7 @@ __all__ = [
     "LLMProvider",
     "ProviderError",
     "TransientProviderError",
+    "RateLimitedError",
     "PermanentProviderError",
     "GeminiProvider",
     "build_provider_chain",

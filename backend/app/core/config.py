@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Answer transcription. Gemini takes audio as an ordinary input part, so this
     # rides the same keys and the same failover as every other LLM call.
     gemini_stt_model: str = "gemini-2.5-flash"
+    # Per-attempt ceiling on any Gemini call. Generous because question-plan
+    # generation legitimately runs 5-15s, but bounded: an unbounded call could be
+    # retried twice per key across two keys, so the worst case had no limit at
+    # all. Transcription of a long answer is the slowest case, hence not 30s.
+    gemini_timeout_seconds: int = 60
 
     @property
     def gemini_api_keys(self) -> list[str]:
@@ -87,6 +92,35 @@ class Settings(BaseSettings):
     interview_hard_cap_questions: int = 8
 
     max_resume_file_size_mb: int = 10
+    # A job description goes straight into an LLM prompt and an embedding call.
+    # Resumes were capped at 10MB; this side had no bound at all.
+    max_job_description_chars: int = 50_000
+
+    # --- Stale match sweep (services/match_reaper.py) ---
+    # Scoring takes seconds. Ten minutes is an enormous margin over that, chosen
+    # so a false positive is not realistically reachable.
+    stale_match_after_seconds: int = 600
+    stale_match_sweep_interval_seconds: int = 300
+
+    # Origins allowed to call this API from a browser. Comma-separated in the
+    # environment. Defaults cover local development; set explicitly in deployment.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def cors_allow_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def _reject_placeholder_secret(self) -> "Settings":
+        """A default JWT signing key outside development is a silent, total
+        auth bypass for anyone who has read the example env file."""
+        placeholder = "change-me-to-a-long-random-string"
+        if self.env != "development" and self.jwt_secret_key.strip() in {placeholder, ""}:
+            raise ValueError(
+                "JWT_SECRET_KEY is still the placeholder from .env.example. "
+                "Set a long random value before running outside development."
+            )
+        return self
 
 
 @lru_cache

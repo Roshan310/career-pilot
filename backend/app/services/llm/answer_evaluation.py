@@ -1,8 +1,12 @@
-from pydantic import BaseModel, ValidationError
+import logging
+
+from pydantic import BaseModel
 
 from app.core.exceptions import LLMServiceError
-from app.services.llm.client import call_json
+from app.services.llm.client import call_structured
 from app.services.llm.prompts import answer_evaluation_prompt
+
+logger = logging.getLogger(__name__)
 
 
 class AnswerEvaluation(BaseModel):
@@ -17,11 +21,10 @@ def evaluate_answer(question_text: str, based_on: str, answer_transcript: str) -
     """SPECS.md §7.1 evaluation prompt. `based_on` here is the turn's stored
     targets_gap/question context — §4's interview_turns table has no separate
     based_on column, so we reuse what was persisted at question-generation time."""
-    result = call_json(answer_evaluation_prompt(question_text, based_on, answer_transcript))
-    if not isinstance(result, dict):
-        raise LLMServiceError("Answer evaluation LLM call did not return a JSON object")
-
     try:
-        return AnswerEvaluation.model_validate(result)
-    except ValidationError as exc:
-        raise LLMServiceError(f"Answer evaluation failed schema validation: {exc}") from exc
+        # Validation happens inside the retry (see `call_structured`): an
+        # off-schema field is a resampling problem, not a fatal one.
+        return call_structured(answer_evaluation_prompt(question_text, based_on, answer_transcript), AnswerEvaluation)
+    except LLMServiceError:
+        logger.warning("Answer evaluation failed schema validation after every attempt", exc_info=True)
+        raise LLMServiceError("We couldn't score that answer.") from None
