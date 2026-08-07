@@ -5,7 +5,7 @@ import { ChevronDown, ListChecks } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { StarRating } from "@/components/common/star-rating";
-import type { TurnDetail } from "@/lib/types";
+import type { QuestionPlanItem, TurnDetail } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function turnAverage(turn: TurnDetail): number | null {
@@ -14,7 +14,15 @@ function turnAverage(turn: TurnDetail): number | null {
   return (s.structure + s.specificity + s.relevance) / 3;
 }
 
-function TurnRow({ turn, defaultOpen }: { turn: TurnDetail; defaultOpen: boolean }) {
+function TurnRow({
+  turn,
+  defaultOpen,
+  plan,
+}: {
+  turn: TurnDetail;
+  defaultOpen: boolean;
+  plan?: QuestionPlanItem;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   const avg = turnAverage(turn);
   // "" means skipped; null means never reached (shouldn't appear on a report).
@@ -56,10 +64,34 @@ function TurnRow({ turn, defaultOpen }: { turn: TurnDetail; defaultOpen: boolean
 
       {open && (
         <div className="space-y-4 pb-5 pl-10 pr-2">
-          {turn.targets_gap && (
-            <p className="text-[13px] text-text-muted">
-              Probing your gap in <span className="text-text-secondary">{turn.targets_gap}</span>
-            </p>
+          {/* Why this question exists. The product's pitch is that every
+              question is traceable to your resume and this job; based_on has
+              been stored on the plan all along and shown nowhere. */}
+          {(plan?.based_on || turn.targets_gap) && (
+            <div className="rounded-card border border-divider bg-hover px-4 py-3">
+              {plan?.category && (
+                <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+                  {plan.category}
+                </p>
+              )}
+              {plan?.based_on ? (
+                <p className="text-[13px] leading-relaxed text-text-secondary">
+                  Asked because your resume says{" "}
+                  <span className="text-text-primary">{plan.based_on}</span>
+                  {turn.targets_gap && (
+                    <>
+                      {" "}— probing your gap in{" "}
+                      <span className="text-text-primary">{turn.targets_gap}</span>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <p className="text-[13px] text-text-secondary">
+                  Probing your gap in{" "}
+                  <span className="text-text-primary">{turn.targets_gap}</span>
+                </p>
+              )}
+            </div>
           )}
 
           <div>
@@ -96,9 +128,21 @@ function TurnRow({ turn, defaultOpen }: { turn: TurnDetail; defaultOpen: boolean
 }
 
 /** Per-question detail: what was asked, what you said, and how it scored. */
-export function TurnBreakdown({ turns }: { turns: TurnDetail[] }) {
+export function TurnBreakdown({
+  turns,
+  questionPlan,
+}: {
+  turns: TurnDetail[];
+  questionPlan?: QuestionPlanItem[] | null;
+}) {
   const answered = turns.filter((t) => t.answer_transcript !== null);
   if (!answered.length) return null;
+
+  // Matched on question text rather than index: follow-ups are inserted into the
+  // turn sequence and are not in the plan, so positions drift apart.
+  const planByQuestion = new Map(
+    (questionPlan ?? []).map((q) => [q.question_text, q] as const),
+  );
 
   return (
     <Card className="p-6">
@@ -107,7 +151,12 @@ export function TurnBreakdown({ turns }: { turns: TurnDetail[] }) {
       </CardTitle>
       <CardContent className="mt-2">
         {answered.map((turn, i) => (
-          <TurnRow key={turn.turn_number} turn={turn} defaultOpen={i === 0} />
+          <TurnRow
+            key={turn.turn_number}
+            turn={turn}
+            defaultOpen={i === 0}
+            plan={planByQuestion.get(turn.question_text)}
+          />
         ))}
       </CardContent>
     </Card>

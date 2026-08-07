@@ -2,7 +2,7 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -130,6 +130,54 @@ async def get_resume(
     db: AsyncSession = Depends(get_db),
 ):
     return await _get_owned_resume(db, resume_id, current_user)
+
+
+# The original upload has no stored content type, so it is inferred from the
+# extension `safe_filename` preserved. Anything unrecognised downloads as a
+# generic binary rather than being mislabelled.
+_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain; charset=utf-8",
+}
+
+
+@router.get("/{resume_id}/file")
+async def download_resume(
+    resume_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The original uploaded file.
+
+    Streamed through the API rather than handed out as a presigned URL, for the
+    same reason the interview audio endpoint gives: the JWT stays the only way
+    in, and a resume is squarely the user's private data.
+
+    The object was written on upload and, until now, only ever read again in
+    order to delete it — the file the user handed us was unreachable to them.
+    """
+    resume = await _get_owned_resume(db, resume_id, current_user)
+    if not resume.file_url:
+        raise NotFoundError("No original file was stored for this resume")
+
+    content = await asyncio.to_thread(storage_service.get_bytes, resume.file_url)
+    if content is None:
+        # Row survived, object didn't. Possible if a delete half-failed.
+        logger.warning("Resume %s references missing object %s", resume.id, resume.file_url)
+        raise NotFoundError("The stored file for this resume is no longer available")
+
+    filename = storage_service.safe_filename(resume.file_name)
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    return Response(
+        content=content,
+        media_type=_CONTENT_TYPES.get(extension, "application/octet-stream"),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @router.delete("/{resume_id}", status_code=204)

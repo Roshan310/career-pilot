@@ -39,6 +39,7 @@ class ParsedResumeData(BaseModel):
 class ResumeResponse(BaseModel):
     id: uuid.UUID
     file_name: str | None
+    has_file: bool = False
     raw_text: str
     parsed_data: dict
     version: int

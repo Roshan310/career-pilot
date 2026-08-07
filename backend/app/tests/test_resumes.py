@@ -143,3 +143,72 @@ async def test_get_resume_not_owned_by_user_returns_404(authed_client, mocked_ll
 
     response = await authed_client.get(f"/api/resumes/{other_resume.id}")
     assert response.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Downloading the original file
+#
+# file_url was written on upload and, until now, read only in order to delete
+# it — the file the user handed us was unreachable to them.
+# --------------------------------------------------------------------------
+
+
+async def _upload(client, filename: str) -> dict:
+    """Upload under an arbitrary filename.
+
+    Text extraction is patched out because these tests are about serving the
+    stored bytes back, not about parsing — a .pdf name carrying text really does
+    (correctly) fail in pdfplumber.
+    """
+    content = (FIXTURES / "sample_resume.txt").read_bytes()
+    with patch("app.api.v1.resumes.extract_text", return_value="Experienced Python engineer"):
+        response = await client.post(
+            "/api/resumes", files={"file": (filename, content, "application/octet-stream")}
+        )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+async def test_download_returns_the_stored_file(authed_client, mocked_llm_and_embeddings):
+    created = await _upload(authed_client, filename="my-cv.pdf")
+
+    with patch("app.services.storage_service.get_bytes", return_value=b"%PDF-1.4 fake"):
+        response = await authed_client.get(f"/api/resumes/{created['id']}/file")
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-1.4 fake"
+    assert response.headers["content-type"] == "application/pdf"
+    assert 'filename="my-cv.pdf"' in response.headers["content-disposition"]
+
+
+async def test_download_infers_the_type_from_the_extension(authed_client, mocked_llm_and_embeddings):
+    """There is no stored content type — it comes from the sanitised filename."""
+    created = await _upload(authed_client, filename="notes.txt")
+
+    with patch("app.services.storage_service.get_bytes", return_value=b"plain"):
+        response = await authed_client.get(f"/api/resumes/{created['id']}/file")
+
+    assert response.headers["content-type"].startswith("text/plain")
+
+
+async def test_download_404s_when_the_object_is_gone(authed_client, mocked_llm_and_embeddings):
+    """The row can outlive the object if a delete half-failed. That's a 404, not
+    a 500 with an empty body."""
+    created = await _upload(authed_client, filename="gone.pdf")
+
+    with patch("app.services.storage_service.get_bytes", return_value=None):
+        response = await authed_client.get(f"/api/resumes/{created['id']}/file")
+
+    assert response.status_code == 404
+
+
+async def test_download_requires_ownership(authed_client, mocked_llm_and_embeddings, db_session):
+    created = await _upload(authed_client, filename="private.pdf")
+
+    other = await register_user(db_session, "nosy@example.com", "password123", None)
+    token, _ = issue_tokens(other)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as intruder:
+        intruder.headers["Authorization"] = f"Bearer {token}"
+        with patch("app.services.storage_service.get_bytes", return_value=b"secret"):
+            assert (await intruder.get(f"/api/resumes/{created['id']}/file")).status_code == 404

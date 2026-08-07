@@ -173,7 +173,7 @@ export default function InterviewReportPage() {
         </CardContent>
       </Card>
 
-      {session && <TurnBreakdown turns={session.turns} />}
+      {session && <TurnBreakdown turns={session.turns} questionPlan={session.question_plan} />}
     </div>
   );
 }

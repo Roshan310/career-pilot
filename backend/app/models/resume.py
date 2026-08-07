@@ -29,3 +29,13 @@ class Resume(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    @property
+    def has_file(self) -> bool:
+        """Whether the original upload is still downloadable.
+
+        Exposed instead of `file_url` itself: the client only needs to know
+        whether to offer a download, and the object key is storage layout it has
+        no business seeing.
+        """
+        return bool(self.file_url)

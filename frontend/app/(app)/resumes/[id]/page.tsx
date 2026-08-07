@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Briefcase, GraduationCap, Mail, MapPin, Phone, Sparkles, Award } from "lucide-react";
+import { toast } from "sonner";
+import { Award, Briefcase, Download, GraduationCap, Loader2, Mail, MapPin, Phone, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
@@ -9,12 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResume } from "@/hooks/use-data";
+import { downloadResumeFile } from "@/lib/api/resumes";
+import { ApiError } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils";
 
 export default function ResumeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { data: resume, isLoading, isError } = useResume(id);
+  const [downloading, setDownloading] = useState(false);
 
   if (isLoading) {
     return (
@@ -41,6 +46,28 @@ export default function ResumeDetailPage() {
   const p = resume.parsed_data ?? {};
   const contact = p.contact ?? {};
 
+  async function download() {
+    if (!resume) return;
+    setDownloading(true);
+    try {
+      // The file is behind the JWT, so it arrives as a blob rather than an href.
+      const blob = await downloadResumeFile(resume.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = resume.file_name || "resume";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoking immediately can cancel the download in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not download this file.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <BackLink href="/resumes">Back to Library</BackLink>
@@ -49,7 +76,17 @@ export default function ResumeDetailPage() {
         title={resume.file_name || "Resume"}
         subtitle={`Version ${resume.version} · Uploaded ${formatDate(resume.created_at)}`}
         action={
-          <Button onClick={() => router.push(`/analysis?resume=${resume.id}`)}>Analyze this resume</Button>
+          <div className="flex flex-wrap gap-3">
+            {resume.has_file && (
+              <Button variant="secondary" onClick={download} disabled={downloading}>
+                {downloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                {downloading ? "Preparing…" : "Download original"}
+              </Button>
+            )}
+            <Button onClick={() => router.push(`/analysis?resume=${resume.id}`)}>
+              Analyze this resume
+            </Button>
+          </div>
         }
       />
 

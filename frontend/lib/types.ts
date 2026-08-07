@@ -53,6 +53,8 @@ export interface ParsedResumeData {
 export interface Resume {
   id: string;
   file_name: string | null;
+  /** Whether the original upload is still downloadable. */
+  has_file: boolean;
   raw_text: string;
   parsed_data: ParsedResumeData;
   version: number;
@@ -153,7 +155,11 @@ export interface MissingSkill {
 
 export interface Suggestion {
   missing_skill?: string;
+  /** The bullet as it stands today. Stored all along, never shown. */
+  original_bullet?: string;
   suggestion?: string;
+  /** "required" | "preferred" — how urgent this gap is. */
+  priority?: string;
   has_honest_connection?: boolean;
   [k: string]: unknown;
 }
@@ -286,6 +292,20 @@ export interface TurnDetail {
   created_at: string;
 }
 
+/**
+ * One planned question. `based_on` is the whole differentiator — the resume
+ * detail or JD requirement the question came from — and it reached the client
+ * on every session while being rendered nowhere.
+ */
+export interface QuestionPlanItem {
+  question_text: string;
+  question_type?: string | null;
+  /** The LLM's own label, e.g. "Technical Deep Dive". */
+  category?: string | null;
+  targets_gap?: string | null;
+  based_on?: string | null;
+}
+
 export interface InterviewSession {
   id: string;
   resume_id: string | null;
@@ -293,7 +313,7 @@ export interface InterviewSession {
   match_id: string | null;
   mode: string;
   status: InterviewStatus | string;
-  question_plan: unknown[] | null;
+  question_plan: QuestionPlanItem[] | null;
   started_at: string;
   ended_at: string | null;
   current_question: CurrentQuestion | null;

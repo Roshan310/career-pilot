@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Lightbulb, Loader2, Mic, TriangleAlert } from "lucide-react";
 import { BackLink } from "@/components/common/back-link";
+import { CopyButton } from "@/components/common/copy-button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +114,14 @@ export default function MatchReportPage() {
   const missing = match.missing_skills ?? [];
   const suggestions = match.suggestions ?? [];
 
+  // matching_service stores {skill, priority} on every entry; the UI used to
+  // render skillName() alone, so a must-have gap looked exactly like a
+  // nice-to-have and everything read as equally urgent.
+  const priorityOf = (s: unknown) =>
+    typeof s === "object" && s !== null ? (s as { priority?: string }).priority : undefined;
+  const mustHave = missing.filter((s) => priorityOf(s) === "required");
+  const niceToHave = missing.filter((s) => priorityOf(s) !== "required");
+
   return (
     <div className="space-y-6">
       {back}
@@ -178,11 +187,36 @@ export default function MatchReportPage() {
 
         <Card className="p-6">
           <CardTitle><TriangleAlert size={18} className="text-warning" /> Missing Skills</CardTitle>
-          <CardContent className="mt-4 flex flex-wrap gap-2">
-            {missing.length ? (
-              missing.map((s, i) => <Badge key={i} variant="warning">{skillName(s)}</Badge>)
-            ) : (
+          <CardContent className="mt-4 space-y-4">
+            {missing.length === 0 ? (
               <p className="text-[15px] text-text-secondary">Great — no required skills are missing.</p>
+            ) : (
+              <>
+                {mustHave.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+                      Must have
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {mustHave.map((s, i) => (
+                        <Badge key={i} variant="error">{skillName(s)}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {niceToHave.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+                      Nice to have
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {niceToHave.map((s, i) => (
+                        <Badge key={i} variant="warning">{skillName(s)}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -195,10 +229,34 @@ export default function MatchReportPage() {
           {suggestions.length ? (
             suggestions.map((s, i) => (
               <div key={i} className="rounded-2xl border border-border bg-background p-4">
-                {s.missing_skill && (
-                  <Badge variant="wine" className="mb-2">{s.missing_skill}</Badge>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {s.missing_skill && <Badge variant="wine">{s.missing_skill}</Badge>}
+                    {s.priority === "required" && <Badge variant="error">Must have</Badge>}
+                  </div>
+                  {s.suggestion && <CopyButton value={s.suggestion} label="Copy rewrite" />}
+                </div>
+
+                {/* The "before" was stored on every suggestion and never shown —
+                    a rewrite you can't compare to the original is hard to trust. */}
+                {s.original_bullet && (
+                  <div className="mb-3">
+                    <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+                      Your bullet today
+                    </p>
+                    <p className="text-[14px] leading-relaxed text-text-secondary line-through decoration-text-disabled">
+                      {s.original_bullet}
+                    </p>
+                  </div>
+                )}
+
+                {s.original_bullet && (
+                  <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+                    Suggested rewrite
+                  </p>
                 )}
                 <p className="text-[15px] leading-relaxed text-text-primary">{s.suggestion}</p>
+
                 {s.has_honest_connection === false && (
                   <p className="mt-2 text-[13px] text-warning">
                     Note: only use this if it reflects genuine experience.
