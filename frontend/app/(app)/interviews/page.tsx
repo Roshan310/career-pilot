@@ -56,16 +56,18 @@ export default function InterviewsPage() {
             const resumable = iv.status === "in_progress" || iv.status === "wrapping_up";
             return (
               <Card key={iv.id} className="flex flex-wrap items-center justify-between gap-4 p-5">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-wine-tint">
-                    <Mic size={20} className="text-wine" />
+                {/* min-w-0 lets the long "company — title" line truncate instead
+                    of forcing the right-hand cluster off the card on narrow screens. */}
+                <div className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-wine-tint">
+                    <Mic size={20} className="text-wine-fg" />
                   </div>
-                  <div>
-                    <p className="text-[16px] font-semibold text-text-primary">
+                  <div className="min-w-0">
+                    <p className="truncate text-[16px] font-semibold text-text-primary">
                       {iv.job_company || "Interview"}
                       {iv.job_title ? ` — ${iv.job_title}` : ""}
                     </p>
-                    <p className="mt-0.5 text-[13px] text-text-muted">
+                    <p className="mt-0.5 truncate text-[13px] text-text-muted">
                       {formatDate(iv.started_at)}
                       {iv.duration_minutes ? ` · ${Math.round(iv.duration_minutes)} min` : ""}
                       {" · "}
@@ -74,7 +76,7 @@ export default function InterviewsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-5">
+                <div className="flex shrink-0 items-center gap-4 sm:gap-5">
                   {pct !== null && (
                     <div className="text-right">
                       <p className="text-[22px] font-bold leading-none text-text-primary">{pct}%</p>

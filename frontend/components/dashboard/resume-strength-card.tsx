@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowRight, CheckCircle2, FileSearch, HelpCircle, TriangleAlert } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileSearch, TriangleAlert } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ProgressRing } from "@/components/common/progress-ring";
 import { CountUp } from "@/components/common/count-up";
@@ -18,6 +18,18 @@ function scoreLabel(pct: number): string {
   return "Needs Work";
 }
 
+/**
+ * Must move with `scoreLabel`. This sentence used to read "highly relevant"
+ * unconditionally, so a 12% match claimed a strong fit directly beneath a ring
+ * labelled "Needs Work".
+ */
+function scoreSummary(pct: number): string {
+  if (pct >= 85) return "Your resume is an excellent match for";
+  if (pct >= 70) return "Your resume is a strong match for";
+  if (pct >= 50) return "Your resume partly matches";
+  return "Your resume needs work to match";
+}
+
 interface Props {
   listItem: MatchListItem | null;
   detail: Match | null | undefined;
@@ -29,10 +41,7 @@ export function ResumeStrengthCard({ listItem, detail, loading }: Props) {
 
   return (
     <Card className="p-6">
-      <div className="flex items-center gap-2">
-        <span className="text-card-title text-text-primary">Resume Strength</span>
-        <HelpCircle size={16} className="text-text-muted" />
-      </div>
+      <span className="text-card-title text-text-primary">Resume Strength</span>
 
       {loading ? (
         <div className="mt-6 flex gap-6">
@@ -67,7 +76,7 @@ export function ResumeStrengthCard({ listItem, detail, loading }: Props) {
           <div className="flex-1">
             <p className="text-[15px] font-semibold text-text-primary">Overall Match Score</p>
             <p className="mt-1 text-[15px] leading-relaxed text-text-secondary">
-              Your resume is highly relevant to{" "}
+              {scoreSummary(scorePct(listItem.overall_score)!)}{" "}
               <span className="font-medium text-text-primary">{listItem.job_title || "this role"}</span>
               {listItem.job_company && (
                 <>

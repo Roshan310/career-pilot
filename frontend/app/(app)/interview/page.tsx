@@ -78,11 +78,16 @@ export default function InterviewPracticePage() {
     (i) => i.status === "in_progress" || i.status === "wrapping_up",
   );
 
+  const blockedBy = !resumeId && !jobId
+    ? "Pick a resume and a job description to continue."
+    : !resumeId
+      ? "Pick a resume to continue."
+      : !jobId
+        ? "Pick a job description to continue."
+        : null;
+
   async function start() {
-    if (!resumeId || !jobId) {
-      toast.error("Pick both a resume and a job description.");
-      return;
-    }
+    if (!resumeId || !jobId) return;
     setStarting(true);
     setStepIndex(0);
     try {
@@ -109,7 +114,7 @@ export default function InterviewPracticePage() {
       {resumable.length > 0 && (
         <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div className="flex items-center gap-3">
-            <Clock size={18} className="text-wine" />
+            <Clock size={18} className="text-wine-fg" />
             <span className="text-[15px] text-text-primary">
               You have an interview in progress.
             </span>
@@ -125,7 +130,7 @@ export default function InterviewPracticePage() {
 
       <Card className="p-6">
         <CardTitle>
-          <Mic size={18} className="text-wine" /> New Interview
+          <Mic size={18} className="text-wine-fg" /> New Interview
         </CardTitle>
 
         <div className="mt-5 grid gap-5 md:grid-cols-2">
@@ -217,7 +222,7 @@ export default function InterviewPracticePage() {
           <span className="text-[13px] text-text-muted">
             {starting
               ? PREPARING_STEPS[stepIndex]
-              : "Up to 8 questions or 20 minutes, whichever comes first."}
+              : (blockedBy ?? "Up to 8 questions or 20 minutes, whichever comes first.")}
           </span>
         </div>
       </Card>

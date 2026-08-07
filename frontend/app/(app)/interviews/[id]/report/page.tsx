@@ -1,17 +1,21 @@
 "use client";
 
+import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Target, ThumbsUp, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Target, ThumbsUp, TriangleAlert } from "lucide-react";
+import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/common/progress-ring";
 import { CountUp } from "@/components/common/count-up";
+import { FindingList } from "@/components/interview/report-findings";
 import { SpeechMetricsCard } from "@/components/interview/speech-metrics-card";
 import { TurnBreakdown } from "@/components/interview/turn-breakdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInterview, useInterviewReport } from "@/hooks/use-data";
 import { ratingToPct } from "@/lib/utils";
+import { markReportReviewed } from "@/hooks/use-reviewed-reports";
 
 export default function InterviewReportPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,13 +25,14 @@ export default function InterviewReportPage() {
   // carries the aggregate. Both are needed for the full picture.
   const { data: session } = useInterview(id);
 
+  // Ticks "Feedback reviewed" on the dashboard. Only once the report actually
+  // rendered — reaching the route with an error state is not reading it.
+  useEffect(() => {
+    if (report) markReportReviewed(id);
+  }, [report, id]);
+
   const back = (
-    <button
-      onClick={() => router.push("/interviews")}
-      className="flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
-    >
-      <ArrowLeft size={16} /> Back to History
-    </button>
+    <BackLink href="/interviews">Back to History</BackLink>
   );
 
   if (isLoading) {
@@ -84,38 +89,23 @@ export default function InterviewReportPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="p-6">
           <CardTitle><ThumbsUp size={18} className="text-success" /> Strengths</CardTitle>
-          <CardContent className="mt-4 space-y-3">
-            {strengths.length ? (
-              strengths.map((s) => (
-                <div key={s.turn_number} className="flex gap-2.5 text-[15px] text-text-primary">
-                  <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-success" />
-                  {s.question_text}
-                </div>
-              ))
-            ) : (
-              <p className="text-[15px] text-text-secondary">No standout strengths recorded this session.</p>
-            )}
+          <CardContent className="mt-4 space-y-4">
+            <FindingList
+              items={strengths}
+              variant="strength"
+              empty="Nothing stood out as a strength this session — start with the areas to improve."
+            />
           </CardContent>
         </Card>
 
         <Card className="p-6">
           <CardTitle><TriangleAlert size={18} className="text-warning" /> Areas to Improve</CardTitle>
-          <CardContent className="mt-4 space-y-3">
-            {improvements.length ? (
-              improvements.map((s) => (
-                <div key={s.turn_number} className="flex gap-2.5 text-[15px] text-text-primary">
-                  <TriangleAlert size={17} className="mt-0.5 shrink-0 text-warning" />
-                  <span>
-                    {s.question_text}
-                    {s.targets_gap && (
-                      <span className="ml-1.5 text-[13px] text-text-muted">({s.targets_gap})</span>
-                    )}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="text-[15px] text-text-secondary">No weak areas flagged — nicely done.</p>
-            )}
+          <CardContent className="mt-4 space-y-4">
+            <FindingList
+              items={improvements}
+              variant="improvement"
+              empty="Nothing to flag — a strong session all round."
+            />
           </CardContent>
         </Card>
       </div>
@@ -123,7 +113,7 @@ export default function InterviewReportPage() {
       <SpeechMetricsCard metrics={report.speech_metrics} />
 
       <Card className="p-6">
-        <CardTitle><Target size={18} className="text-wine" /> Gap Coverage</CardTitle>
+        <CardTitle><Target size={18} className="text-wine-fg" /> Gap Coverage</CardTitle>
         <CardContent className="mt-4 grid gap-6 sm:grid-cols-2">
           <div>
             <p className="mb-2 text-[14px] font-medium text-text-secondary">Addressed</p>

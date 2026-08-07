@@ -49,7 +49,7 @@ export function SpeechMetricsCard({ metrics }: { metrics: SpeechMetrics | null }
   return (
     <Card className="p-6">
       <CardTitle>
-        <Gauge size={18} className="text-wine" /> Delivery
+        <Gauge size={18} className="text-wine-fg" /> Delivery
       </CardTitle>
       <CardContent className="mt-4 grid gap-4 sm:grid-cols-3">
         <Metric

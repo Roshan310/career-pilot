@@ -281,14 +281,62 @@ export interface TurnSubmitResponse {
   progress: SessionProgress | null;
 }
 
+/** Stable identifiers emitted by `backend/app/services/report_findings.py`. The
+ *  wording for each lives in `components/interview/report-findings.tsx` — the
+ *  backend deliberately sends facts and a code, never prose. */
+export type FindingCode =
+  | "structure_strong"
+  | "specificity_strong"
+  | "relevance_strong"
+  | "all_questions_answered"
+  | "pace_comfortable"
+  | "fillers_low"
+  | "structure_weak"
+  | "specificity_weak"
+  | "relevance_weak"
+  | "questions_skipped"
+  | "pace_fast"
+  | "pace_slow"
+  | "fillers_high"
+  | "long_pause"
+  | "no_scored_answers";
+
+export interface FindingExemplar {
+  turn_number: number;
+  question_text: string;
+  score: number | null;
+  targets_gap: string | null;
+}
+
+export interface ReportFinding {
+  kind: "dimension" | "delivery" | "participation";
+  code: FindingCode;
+  /** "relative" means no dimension cleared an absolute threshold, so this is a
+   *  ranking rather than a verdict — the copy hedges accordingly. */
+  basis: "absolute" | "relative" | null;
+  dimension: "structure" | "specificity" | "relevance" | null;
+  average: number | null;
+  turns_counted: number;
+  metric: Record<string, number | null> | null;
+  exemplar: FindingExemplar | null;
+}
+
+/** The pre-findings shape, still on any report the backfill hasn't touched.
+ *  JSONB enforces no schema, so this stays supported rather than assumed away. */
+export interface LegacyReportItem {
+  turn_number: number;
+  question_text: string;
+  targets_gap?: string | null;
+}
+
+export type ReportItem = ReportFinding | LegacyReportItem;
+
 export interface SessionReport {
   id: string;
   session_id: string;
   overall_score: number | null;
-  strengths: { turn_number: number; question_text: string }[] | null;
-  improvement_areas:
-    | { turn_number: number; question_text: string; targets_gap: string | null }[]
-    | null;
+  strengths: ReportItem[] | null;
+  improvement_areas: ReportItem[] | null;
   gap_coverage: { addressed: string[]; still_open: string[] } | null;
   speech_metrics: SpeechMetrics | null;
   created_at: string;

@@ -50,7 +50,7 @@ export default function JobsPage() {
             <Link key={j.id} href={`/jobs/${j.id}`} className="block rounded-card focus:outline-none focus-visible:ring-2 focus-visible:ring-wine">
               <Card className="p-5 transition-shadow duration-[180ms] hover:shadow-card-hover">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-wine-tint">
-                  <Briefcase size={20} className="text-wine" />
+                  <Briefcase size={20} className="text-wine-fg" />
                 </div>
                 <p className="mt-4 truncate text-[16px] font-semibold text-text-primary">
                   {j.title || "Untitled role"}

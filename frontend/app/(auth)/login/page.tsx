@@ -18,9 +18,24 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  function validate(): { email?: string; password?: string } {
+    const next: { email?: string; password?: string } = {};
+    if (!email.trim()) next.email = "Enter your email address.";
+    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))
+      next.email = "That doesn't look like a valid email address.";
+    if (!password) next.password = "Enter your password.";
+    return next;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSubmitted(true);
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
     setLoading(true);
     try {
       const user = await login(email, password);
@@ -46,9 +61,12 @@ export default function LoginPage() {
             id="email"
             type="email"
             autoComplete="email"
-            required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (submitted) setErrors(validate());
+            }}
+            error={errors.email}
             placeholder="you@example.com"
           />
         </div>
@@ -58,9 +76,12 @@ export default function LoginPage() {
             id="password"
             type="password"
             autoComplete="current-password"
-            required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (submitted) setErrors(validate());
+            }}
+            error={errors.password}
             placeholder="••••••••"
           />
         </div>
@@ -72,7 +93,7 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-[15px] text-text-secondary">
         Don&apos;t have an account?{" "}
-        <Link href="/register" className="font-medium text-wine hover:underline">
+        <Link href="/register" className="font-medium text-wine-fg hover:underline">
           Create one
         </Link>
       </p>

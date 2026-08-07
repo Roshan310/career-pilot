@@ -19,7 +19,7 @@ export function StarRating({ value, max = 5, className }: StarRatingProps) {
             <Star size={16} className="text-text-disabled" strokeWidth={2} />
             {(filled || half) && (
               <span className="absolute inset-0 overflow-hidden" style={{ width: half ? "50%" : "100%" }}>
-                <Star size={16} className="fill-wine text-wine" strokeWidth={2} />
+                <Star size={16} className="fill-wine-fg text-wine-fg" strokeWidth={2} />
               </span>
             )}
           </span>

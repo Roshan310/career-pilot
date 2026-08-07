@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/providers/auth-provider";
 import { useUsage } from "@/hooks/use-data";
 import { displayName, formatDate } from "@/lib/utils";
@@ -23,13 +24,18 @@ export default function SettingsPage() {
         <CardTitle>Account</CardTitle>
         <CardContent className="mt-5 space-y-5">
           <div className="space-y-2">
-            <Label>Name</Label>
-            <Input value={displayName(user?.name, user?.email)} readOnly />
+            <Label htmlFor="account-name">Name</Label>
+            <Input id="account-name" value={displayName(user?.name, user?.email)} readOnly />
           </div>
           <div className="space-y-2">
-            <Label>Email</Label>
-            <Input value={user?.email ?? ""} readOnly />
+            <Label htmlFor="account-email">Email</Label>
+            <Input id="account-email" value={user?.email ?? ""} readOnly />
           </div>
+          {/* These look like inputs because they are; editing them isn't
+              supported yet, so say so rather than silently swallowing keystrokes. */}
+          <p className="text-[13px] text-text-muted">
+            Account details can&apos;t be changed yet.
+          </p>
           <div className="flex items-center gap-2">
             <span className="text-[14px] text-text-secondary">Plan:</span>
             <Badge variant="wine">{user?.subscription_tier ?? "free"}</Badge>
@@ -57,7 +63,11 @@ export default function SettingsPage() {
               {usage.usage_reset_at && <p>Resets on {formatDate(usage.usage_reset_at)}</p>}
             </>
           ) : (
-            <p>Loading…</p>
+            <div className="space-y-2.5" aria-busy="true" aria-label="Loading usage">
+              <Skeleton className="h-5 w-52" />
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-5 w-40" />
+            </div>
           )}
         </CardContent>
       </Card>

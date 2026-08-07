@@ -114,7 +114,7 @@ export function MicOrb({
       <p
         className={cn(
           "text-[14px] font-medium",
-          phase === "armed" ? "text-wine" : "text-text-secondary",
+          phase === "armed" ? "text-wine-fg" : "text-text-secondary",
         )}
         aria-live="polite"
       >

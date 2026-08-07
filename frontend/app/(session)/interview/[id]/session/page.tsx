@@ -108,7 +108,7 @@ export default function InterviewSessionPage() {
         <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-10">
           <Card className="p-10 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-wine/10">
-              <Mic size={24} className="text-wine" />
+              <Mic size={24} className="text-wine-fg" />
             </div>
             <h2 className="mt-5 text-h3 text-text-primary">
               {s.answered.length > 0 ? "Ready to pick up where you left off" : "Ready when you are"}

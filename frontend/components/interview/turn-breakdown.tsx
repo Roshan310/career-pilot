@@ -103,7 +103,7 @@ export function TurnBreakdown({ turns }: { turns: TurnDetail[] }) {
   return (
     <Card className="p-6">
       <CardTitle>
-        <ListChecks size={18} className="text-wine" /> Question by Question
+        <ListChecks size={18} className="text-wine-fg" /> Question by Question
       </CardTitle>
       <CardContent className="mt-2">
         {answered.map((turn, i) => (

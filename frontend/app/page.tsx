@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { tokenStore } from "@/lib/api/client";
-import { Logo } from "@/components/layout/logo";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Home() {
   const router = useRouter();
@@ -11,10 +11,13 @@ export default function Home() {
     router.replace(tokenStore.isAuthenticated ? "/dashboard" : "/login");
   }, [router]);
 
+  // Pure redirect hop. A skeleton reads as "loading" without the brand flash of
+  // a full-screen logo that is only on screen for a frame or two.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="animate-pulse">
-        <Logo />
+    <div className="min-h-screen bg-background" aria-busy="true" aria-label="Loading">
+      <div className="mx-auto max-w-content space-y-6 px-6 py-10">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-64 rounded-card" />
       </div>
     </div>
   );

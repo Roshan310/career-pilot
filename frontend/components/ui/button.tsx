@@ -12,8 +12,8 @@ const buttonVariants = cva(
           "bg-wine text-white shadow-sm hover:bg-wine-hover active:bg-wine-pressed",
         secondary:
           "bg-card text-text-primary border border-border hover:border-border-hover hover:bg-hover",
-        ghost: "bg-transparent text-wine hover:bg-wine-tint",
-        outlineWine: "bg-card text-wine border border-border hover:bg-wine-tint hover:border-wine/30",
+        ghost: "bg-transparent text-wine-fg hover:bg-wine-tint",
+        outlineWine: "bg-card text-wine-fg border border-border hover:bg-wine-tint hover:border-wine/30",
         danger: "bg-error text-white hover:opacity-90",
       },
       size: {

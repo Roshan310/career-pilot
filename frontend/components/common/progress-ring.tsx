@@ -8,22 +8,27 @@ interface ProgressRingProps {
   value: number;
   size?: number;
   thickness?: number;
-  color?: string;
-  trackColor?: string;
+  /** Tailwind stroke class, e.g. "stroke-success". Defaults to the brand fill. */
+  colorClass?: string;
+  trackClass?: string;
   className?: string;
   children?: React.ReactNode;
 }
 
 /**
  * Perfect-circle progress ring (FRONTEND.md §14): 8px default thickness, wine
- * fill, #F2F2F4 track, 800ms ease-out reveal. Center content passed as children.
+ * fill, token-driven track, 800ms ease-out reveal. Center content as children.
+ *
+ * Stroke is set with a class, not the `stroke` attribute: a CSS variable in a
+ * presentation attribute is not reliably resolved, so a themed track has to come
+ * through the cascade.
  */
 export function ProgressRing({
   value,
   size = 160,
   thickness = 8,
-  color = "#B4232D",
-  trackColor = "#F2F2F4",
+  colorClass = "stroke-wine",
+  trackClass = "stroke-ring-track",
   className,
   children,
 }: ProgressRingProps) {
@@ -40,7 +45,7 @@ export function ProgressRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={trackColor}
+          className={trackClass}
           strokeWidth={thickness}
         />
         <motion.circle
@@ -48,7 +53,7 @@ export function ProgressRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={color}
+          className={colorClass}
           strokeWidth={thickness}
           strokeLinecap="round"
           strokeDasharray={circumference}

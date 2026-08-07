@@ -2,11 +2,14 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, CheckCircle2, Lightbulb, Loader2, TriangleAlert } from "lucide-react";
+import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/common/progress-ring";
 import { CountUp } from "@/components/common/count-up";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorPanel } from "@/components/common/error-panel";
 import { useJob, useMatchPolling } from "@/hooks/use-data";
 import { scorePct, skillName } from "@/lib/utils";
 
@@ -35,25 +38,35 @@ function SubScore({ label, score }: { label: string; score: number | null }) {
 export default function MatchReportPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { data: match, isLoading } = useMatchPolling(id);
+  const { data: match, isLoading, isSlow, isStalled } = useMatchPolling(id);
   const { data: job } = useJob(match?.status === "done" ? match.job_id : "");
 
   const back = (
-    <button
-      onClick={() => router.push("/analysis")}
-      className="flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
-    >
-      <ArrowLeft size={16} /> Back to Analysis
-    </button>
+    <BackLink href="/analysis">Back to Analysis</BackLink>
   );
 
   if (isLoading || !match) {
     return (
       <div className="space-y-6">
         {back}
-        <Card className="p-14 text-center">
-          <Loader2 size={28} className="mx-auto animate-spin text-wine" />
-          <p className="mt-4 text-text-secondary">Loading analysis…</p>
+        <Skeleton className="h-64 rounded-card" />
+        <Skeleton className="h-40 rounded-card" />
+      </div>
+    );
+  }
+
+  if (isStalled) {
+    return (
+      <div className="space-y-6">
+        {back}
+        <Card className="p-6">
+          <ErrorPanel
+            title="This analysis is stuck"
+            description="Scoring never finished. That usually means the background worker isn't running — running a new analysis is the fastest way forward."
+            action={
+              <Button onClick={() => router.push("/analysis")}>Run a new analysis</Button>
+            }
+          />
         </Card>
       </div>
     );
@@ -65,11 +78,13 @@ export default function MatchReportPage() {
         {back}
         <Card className="p-14 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-wine-tint">
-            <Loader2 size={26} className="animate-spin text-wine" />
+            <Loader2 size={26} className="animate-spin text-wine-fg" />
           </div>
           <h3 className="mt-5 text-h3 text-text-primary">Analyzing your resume…</h3>
           <p className="mt-2 text-text-secondary">
-            We&apos;re scoring the match and generating suggestions. This usually takes a few seconds.
+            {isSlow
+              ? "This is taking longer than usual. It's still running — you can leave this page and come back."
+              : "We're scoring the match and generating suggestions. This usually takes a few seconds."}
           </p>
         </Card>
       </div>
@@ -155,7 +170,7 @@ export default function MatchReportPage() {
 
       {/* Suggestions */}
       <Card className="p-6">
-        <CardTitle><Lightbulb size={18} className="text-wine" /> Rewrite Suggestions</CardTitle>
+        <CardTitle><Lightbulb size={18} className="text-wine-fg" /> Rewrite Suggestions</CardTitle>
         <CardContent className="mt-4 space-y-4">
           {suggestions.length ? (
             suggestions.map((s, i) => (

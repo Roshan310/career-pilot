@@ -39,6 +39,7 @@ export function RecentInterviews({ interviews, loading }: Props) {
             icon={Clock}
             title="No interviews yet"
             description="Your practice sessions and feedback reports will appear here."
+            action={<Button onClick={() => router.push("/interview")}>Start an Interview</Button>}
           />
         ) : (
           <ol className="relative space-y-6">
@@ -48,7 +49,7 @@ export function RecentInterviews({ interviews, loading }: Props) {
               return (
                 <li key={iv.id} className="relative flex gap-4 pl-1">
                   {/* timeline rail */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex shrink-0 flex-col items-center">
                     <span
                       className={cn(
                         "z-10 flex h-4 w-4 items-center justify-center rounded-full border-2",
@@ -60,31 +61,37 @@ export function RecentInterviews({ interviews, loading }: Props) {
                     {i < rows.length - 1 && <span className="mt-1 w-px flex-1 bg-divider" />}
                   </div>
 
-                  <div className="flex flex-1 items-start justify-between gap-3 pb-1">
+                  {/* min-w-0 lets this shrink below its content width; without it the
+                      long company — title string refuses to give way and pushes the
+                      score and arrow out through the right edge of the card. */}
+                  <div className="flex min-w-0 flex-1 items-start justify-between gap-3 pb-1">
                     <div className="min-w-0">
                       <p className="truncate text-[15px] font-semibold text-text-primary">
                         {iv.job_company || "Interview"}
                         {iv.job_title ? ` — ${iv.job_title}` : ""}
                       </p>
-                      <p className="mt-0.5 text-[13px] text-text-muted">
+                      <p className="mt-0.5 truncate text-[13px] text-text-muted">
                         {formatDate(iv.started_at)}
                         {iv.duration_minutes ? ` · ${Math.round(iv.duration_minutes)} min` : ""}
                       </p>
                     </div>
-                    <div className="text-right">
-                      {pct !== null && (
+                    {/* shrink-0 so the score and link keep their natural width in the
+                        dashboard's narrow third-width column. */}
+                    <div className="shrink-0 text-right">
+                      {/* {pct !== null && (
                         <span className="text-[15px] font-semibold text-success">{pct}%</span>
-                      )}
+                      )} */}
                       <button
                         onClick={() => completed && router.push(`/interviews/${iv.id}/report`)}
                         disabled={!completed}
                         className={cn(
-                          "mt-0.5 flex items-center gap-1 text-[13px] font-medium",
-                          completed ? "text-wine hover:underline" : "text-text-muted",
+                          "mt-0.5 flex items-center gap-1 whitespace-nowrap text-[13px] font-medium",
+                          completed ? "text-wine-fg hover:underline" : "text-text-muted",
+                          "rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40",
                         )}
                       >
                         {completed ? "View Report" : "In progress"}
-                        {completed && <ArrowRight size={13} />}
+                        {completed && <ArrowRight size={13} className="shrink-0" />}
                       </button>
                     </div>
                   </div>

@@ -30,11 +30,17 @@ export default function AnalysisPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [jobOpen, setJobOpen] = useState(false);
 
+  // What is still missing, so the disabled button isn't a dead end.
+  const blockedBy = !resumeId && !jobId
+    ? "Select a resume and a job description to continue."
+    : !resumeId
+      ? "Select a resume to continue."
+      : !jobId
+        ? "Select a job description to continue."
+        : null;
+
   async function runAnalysis() {
-    if (!resumeId || !jobId) {
-      toast.error("Select both a resume and a job description.");
-      return;
-    }
+    if (!resumeId || !jobId) return;
     setRunning(true);
     try {
       const res = await createMatch(resumeId, jobId);
@@ -54,7 +60,7 @@ export default function AnalysisPage() {
       />
 
       <Card className="p-6">
-        <CardTitle><Sparkles size={18} className="text-wine" /> New Analysis</CardTitle>
+        <CardTitle><Sparkles size={18} className="text-wine-fg" /> New Analysis</CardTitle>
         <div className="mt-5 grid gap-5 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Resume</Label>
@@ -99,7 +105,7 @@ export default function AnalysisPage() {
             {running ? "Starting…" : "Run Analysis"}
           </Button>
           <span className="text-[13px] text-text-muted">
-            Analysis runs in the background — you&apos;ll see live progress.
+            {blockedBy ?? "Analysis runs in the background — you'll see live progress."}
           </span>
         </div>
       </Card>

@@ -14,8 +14,16 @@ export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
-  /** Shown in the nav but not yet built. */
-  comingSoon?: boolean;
+}
+
+/**
+ * Single source of truth for nav highlighting. The trailing slash matters:
+ * a bare `startsWith("/interview")` also matches "/interviews", which lit up
+ * two nav items at once on the history page.
+ */
+export function isActive(pathname: string, href: string): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname === href || pathname.startsWith(href + "/");
 }
 
 export const NAV_ITEMS: NavItem[] = [

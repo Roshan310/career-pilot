@@ -13,6 +13,15 @@ interface HeroSectionProps {
   onUpload: () => void;
 }
 
+/** Reflects where the user actually is. The old copy was one static line shown
+ *  identically to a brand-new account and to someone 40 interviews in. */
+function subtitle(done: number, total: number): string {
+  if (done === 0) return "Upload a resume to get your first match score.";
+  if (done >= total) return "You have worked through every step — keep your practice sharp.";
+  if (done === 1) return "Good start. Analyze your resume against a real job next.";
+  return "You're one interview away from your next opportunity.";
+}
+
 export function HeroSection({ user, progress, onUpload }: HeroSectionProps) {
   const router = useRouter();
   const name = displayName(user?.name, user?.email);
@@ -24,7 +33,7 @@ export function HeroSection({ user, progress, onUpload }: HeroSectionProps) {
           {greeting()}, {name} <span className="inline-block">👋</span>
         </h1>
         <p className="mt-2 text-[17px] text-text-secondary">
-          You&apos;re one interview away from your next opportunity.
+          {subtitle(progress.done, progress.total)}
         </p>
 
         <div className="mt-7 flex flex-wrap gap-3">
@@ -42,7 +51,7 @@ export function HeroSection({ user, progress, onUpload }: HeroSectionProps) {
 
       {/* Today's Progress */}
       <div className="rounded-card border border-border bg-card p-6 shadow-card">
-        <p className="text-card-title text-text-primary">Today&apos;s Progress</p>
+        <p className="text-card-title text-text-primary">Your Progress</p>
         <div className="mt-4 flex items-center gap-5">
           <ProgressRing value={progress.total ? progress.done / progress.total : 0} size={92} thickness={7}>
             <span className="text-[20px] font-bold text-text-primary">

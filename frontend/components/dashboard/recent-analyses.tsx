@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, FileText, FileSearch } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -44,6 +45,34 @@ export function RecentAnalyses({ matches, loading }: Props) {
             action={<Button onClick={() => router.push("/analysis")}>Run an Analysis</Button>}
           />
         ) : (
+          <>
+          {/* Below md the five columns force a horizontal scroll inside a page
+              that already scrolls vertically. Cards read far better there. */}
+          <ul className="space-y-3 md:hidden">
+            {rows.map((m) => (
+              <li key={m.id}>
+                <Link
+                  href={`/analysis/${m.id}`}
+                  className="flex items-center gap-3 rounded-2xl border border-border p-3.5 transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40"
+                >
+                  <FileText size={18} className="shrink-0 text-text-muted" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-medium text-text-primary">
+                      {m.resume_file_name || "Resume"}
+                    </p>
+                    <p className="truncate text-[13px] text-text-secondary">
+                      {m.job_company || "—"}
+                      {m.job_title ? ` · ${m.job_title}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-text-muted">{formatDate(m.created_at)}</p>
+                  </div>
+                  <ScoreBadge pct={scorePct(m.overall_score)} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden md:block">
           <Table>
             <THead>
               <TR>
@@ -58,14 +87,19 @@ export function RecentAnalyses({ matches, loading }: Props) {
               {rows.map((m) => (
                 <TR
                   key={m.id}
-                  className="cursor-pointer hover:bg-background"
+                  className="group cursor-pointer hover:bg-background"
                   onClick={() => router.push(`/analysis/${m.id}`)}
                 >
                   <TD>
-                    <span className="flex items-center gap-2.5">
+                    {/* The row keeps its click target for pointer users; this
+                        link is what makes it reachable by keyboard at all. */}
+                    <Link
+                      href={`/analysis/${m.id}`}
+                      className="flex items-center gap-2.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40"
+                    >
                       <FileText size={17} className="text-text-muted" />
                       <span className="max-w-[180px] truncate">{m.resume_file_name || "Resume"}</span>
-                    </span>
+                    </Link>
                   </TD>
                   <TD>
                     <span className="text-text-secondary">
@@ -78,7 +112,7 @@ export function RecentAnalyses({ matches, loading }: Props) {
                   </TD>
                   <TD className="text-text-secondary">{formatDate(m.created_at)}</TD>
                   <TD className="text-right">
-                    <span className="inline-flex items-center gap-1 font-medium text-wine">
+                    <span className="inline-flex items-center gap-1 font-medium text-wine-fg">
                       Open <ArrowRight size={15} />
                     </span>
                   </TD>
@@ -86,6 +120,8 @@ export function RecentAnalyses({ matches, loading }: Props) {
               ))}
             </TBody>
           </Table>
+          </div>
+          </>
         )}
       </div>
     </Card>

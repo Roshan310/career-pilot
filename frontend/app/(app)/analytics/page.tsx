@@ -106,7 +106,7 @@ export default function AnalyticsPage() {
                 )}
               </>
             ) : (
-              <Skeleton className="h-24" />
+              <Skeleton className="h-24 rounded-card" />
             )}
           </CardContent>
         </Card>

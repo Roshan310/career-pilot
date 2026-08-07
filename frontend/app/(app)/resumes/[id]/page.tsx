@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Briefcase, GraduationCap, Mail, MapPin, Phone, Sparkles, Award } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,17 +37,13 @@ export default function ResumeDetailPage() {
     );
   }
 
-  const p = resume.parsed_data;
+  // Same JSONB caveat as the job page — nullable in the database.
+  const p = resume.parsed_data ?? {};
   const contact = p.contact ?? {};
 
   return (
     <div className="space-y-6">
-      <button
-        onClick={() => router.push("/resumes")}
-        className="flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
-      >
-        <ArrowLeft size={16} /> Back to Library
-      </button>
+      <BackLink href="/resumes">Back to Library</BackLink>
 
       <PageHeader
         title={resume.file_name || "Resume"}
@@ -82,7 +79,7 @@ export default function ResumeDetailPage() {
       {/* Skills */}
       {p.skills?.length > 0 && (
         <Card className="p-6">
-          <CardTitle><Sparkles size={18} className="text-wine" /> Skills</CardTitle>
+          <CardTitle><Sparkles size={18} className="text-wine-fg" /> Skills</CardTitle>
           <CardContent className="mt-4 flex flex-wrap gap-2">
             {p.skills.map((s, i) => (
               <Badge key={i} variant="wine">{s}</Badge>
@@ -94,7 +91,7 @@ export default function ResumeDetailPage() {
       {/* Experience */}
       {p.experience?.length > 0 && (
         <Card className="p-6">
-          <CardTitle><Briefcase size={18} className="text-wine" /> Experience</CardTitle>
+          <CardTitle><Briefcase size={18} className="text-wine-fg" /> Experience</CardTitle>
           <CardContent className="mt-5 space-y-6">
             {p.experience.map((exp, i) => (
               <div key={i} className="border-l-2 border-divider pl-4">
@@ -127,7 +124,7 @@ export default function ResumeDetailPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         {p.education?.length > 0 && (
           <Card className="p-6">
-            <CardTitle><GraduationCap size={18} className="text-wine" /> Education</CardTitle>
+            <CardTitle><GraduationCap size={18} className="text-wine-fg" /> Education</CardTitle>
             <CardContent className="mt-4 space-y-4">
               {p.education.map((e, i) => (
                 <div key={i}>
@@ -144,7 +141,7 @@ export default function ResumeDetailPage() {
 
         {p.certifications?.length > 0 && (
           <Card className="p-6">
-            <CardTitle><Award size={18} className="text-wine" /> Certifications</CardTitle>
+            <CardTitle><Award size={18} className="text-wine-fg" /> Certifications</CardTitle>
             <CardContent className="mt-4 flex flex-wrap gap-2">
               {p.certifications.map((c, i) => (
                 <Badge key={i} variant="neutral">{c}</Badge>
