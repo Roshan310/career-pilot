@@ -91,6 +91,50 @@
   border-color: rgb(var(--color-border));
 }
 
+/**
+ * Landing-page backdrop: a hairline grid masked to fade out well before it
+ * reaches the headline. Texture without a second thing competing for attention.
+ *
+ * Drawn from the *text* token at a low alpha, not the border token: `--color-
+ * border` in light mode is #e9e9ec against a #fafafa page, which is under two
+ * levels of grey apart and vanished completely. Deriving it from the foreground
+ * keeps the same faint line in both themes.
+ */
+/**
+ * The hero entrance. Deliberately CSS and not Framer Motion, unlike every reveal
+ * below the fold: a JS animation starts from `opacity: 0` in the server HTML and
+ * only lifts once hydration runs, so a slow bundle — or a background tab
+ * throttling rAF — leaves the headline invisible on a page that has otherwise
+ * finished loading. This runs at first paint and owes nothing to the bundle.
+ *
+ * `both` fill matters twice over: it holds the from-state during the delay, and
+ * it is what makes the reduced-motion override below (which collapses the
+ * duration rather than removing the animation) land on the finished state.
+ */
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.landing-rise {
+  animation: landing-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-grid {
+  background-image:
+    linear-gradient(to right, rgb(var(--color-text-primary) / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--color-text-primary) / 0.055) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 55% at 50% 0%, #000 10%, transparent 72%);
+  mask-image: radial-gradient(ellipse 90% 55% at 50% 0%, #000 10%, transparent 72%);
+}
+
 body {
   background-color: rgb(var(--color-background));
   color: rgb(var(--color-text-primary));

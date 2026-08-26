@@ -105,23 +105,27 @@ export function EditJobDialog({ job, onOpenChange }: Props) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-status">Stage</Label>
-              <Select id="edit-status" value={status} onChange={(e) => setStatus(e.target.value)}>
-                {JOB_STATUS_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {JOB_STATUS_META[s].label}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                id="edit-status"
+                value={status}
+                onValueChange={setStatus}
+                options={JOB_STATUS_ORDER.map((s) => ({
+                  value: s,
+                  label: JOB_STATUS_META[s].label,
+                }))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-priority">Priority</Label>
-              <Select id="edit-priority" value={priority} onChange={(e) => setPriority(e.target.value)}>
-                {JOB_PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p[0].toUpperCase() + p.slice(1)}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                id="edit-priority"
+                value={priority}
+                onValueChange={setPriority}
+                options={JOB_PRIORITIES.map((p) => ({
+                  value: p,
+                  label: p[0].toUpperCase() + p.slice(1),
+                }))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-applied">Applied on</Label>

@@ -7,6 +7,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Menu, X } from "lucide-react";
 import { NAV_ITEMS, isActive } from "./nav-config";
 import { Logo } from "./logo";
+import { AccountMenu } from "./account-menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -65,6 +66,10 @@ export function MobileNav() {
                 );
               })}
             </nav>
+
+            <div className="mt-auto border-t border-divider pt-4">
+              <AccountMenu variant="sidebar" />
+            </div>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

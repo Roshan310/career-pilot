@@ -163,14 +163,15 @@ function InterviewPracticePageInner() {
                 <Upload size={16} /> Upload a resume first
               </Button>
             ) : (
-              <Select value={resumeId} onChange={(e) => setResumeId(e.target.value)}>
-                <option value="">Select a resume…</option>
-                {resumes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.file_name || "Untitled resume"} (v{r.version})
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={resumeId}
+                onValueChange={setResumeId}
+                placeholder="Select a resume…"
+                options={resumes.map((r) => ({
+                  value: r.id,
+                  label: `${r.file_name || "Untitled resume"} (v${r.version})`,
+                }))}
+              />
             )}
           </div>
 
@@ -185,14 +186,15 @@ function InterviewPracticePageInner() {
                 <Plus size={16} /> Add a job description first
               </Button>
             ) : (
-              <Select value={jobId} onChange={(e) => setJobId(e.target.value)}>
-                <option value="">Select a job…</option>
-                {jobs.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {[j.title, j.company].filter(Boolean).join(" · ") || "Untitled role"}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={jobId}
+                onValueChange={setJobId}
+                placeholder="Select a job…"
+                options={jobs.map((j) => ({
+                  value: j.id,
+                  label: [j.title, j.company].filter(Boolean).join(" · ") || "Untitled role",
+                }))}
+              />
             )}
           </div>
 
@@ -200,21 +202,26 @@ function InterviewPracticePageInner() {
             <Label>Gap analysis (optional)</Label>
             <Select
               value={matchId}
-              onChange={(e) => setMatchId(e.target.value)}
+              onValueChange={setMatchId}
               disabled={usableMatches.length === 0}
-            >
-              <option value="">
-                {usableMatches.length === 0
-                  ? "No completed analysis for this pairing"
-                  : "Don't use one — general questions"}
-              </option>
-              {usableMatches.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {[m.job_title, m.job_company].filter(Boolean).join(" · ") || "Analysis"}
-                  {m.overall_score !== null ? ` — ${Math.round(m.overall_score * 100)}% match` : ""}
-                </option>
-              ))}
-            </Select>
+              options={[
+                {
+                  value: "",
+                  label:
+                    usableMatches.length === 0
+                      ? "No completed analysis for this pairing"
+                      : "Don't use one — general questions",
+                },
+                ...usableMatches.map((m) => ({
+                  value: m.id,
+                  label:
+                    ([m.job_title, m.job_company].filter(Boolean).join(" · ") || "Analysis") +
+                    (m.overall_score !== null
+                      ? ` — ${Math.round(m.overall_score * 100)}% match`
+                      : ""),
+                })),
+              ]}
+            />
             <p className="text-[13px] text-text-muted">
               With an analysis attached, questions probe the specific skills you&apos;re missing
               instead of asking generically.

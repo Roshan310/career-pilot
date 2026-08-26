@@ -10,12 +10,13 @@ const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 8, ...props }, ref) => (
+>(({ className, sideOffset = 8, align = "end", ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
-      align="end"
+      align={align}
+      collisionPadding={8}
       className={cn(
         "z-50 min-w-[200px] overflow-hidden rounded-2xl border border-border bg-card p-1.5 shadow-card-hover",
         className,

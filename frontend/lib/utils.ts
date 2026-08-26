@@ -50,6 +50,11 @@ export function displayName(name: string | null | undefined, email?: string): st
   return "there";
 }
 
+/** Just the first name — the dashboard greeting is warmer without a surname. */
+export function firstName(name: string | null | undefined, email?: string): string {
+  return displayName(name, email).split(/\s+/)[0];
+}
+
 /** matched/missing skills come back as either bare strings or {skill, ...} objects. */
 export function skillName(entry: unknown): string {
   if (typeof entry === "string") return entry;

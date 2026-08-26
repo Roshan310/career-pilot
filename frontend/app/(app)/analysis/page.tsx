@@ -89,14 +89,15 @@ function AnalysisPageInner() {
                 <Upload size={16} /> Upload a resume first
               </Button>
             ) : (
-              <Select value={resumeId} onChange={(e) => setResumeId(e.target.value)}>
-                <option value="">Select a resume…</option>
-                {resumes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.file_name || "Untitled resume"} (v{r.version})
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={resumeId}
+                onValueChange={setResumeId}
+                placeholder="Select a resume…"
+                options={resumes.map((r) => ({
+                  value: r.id,
+                  label: `${r.file_name || "Untitled resume"} (v${r.version})`,
+                }))}
+              />
             )}
           </div>
 
@@ -107,14 +108,15 @@ function AnalysisPageInner() {
                 <Plus size={16} /> Add a job description first
               </Button>
             ) : (
-              <Select value={jobId} onChange={(e) => setJobId(e.target.value)}>
-                <option value="">Select a job…</option>
-                {jobs.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {[j.title, j.company].filter(Boolean).join(" · ") || "Untitled role"}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={jobId}
+                onValueChange={setJobId}
+                placeholder="Select a job…"
+                options={jobs.map((j) => ({
+                  value: j.id,
+                  label: [j.title, j.company].filter(Boolean).join(" · ") || "Untitled role",
+                }))}
+              />
             )}
           </div>
         </div>

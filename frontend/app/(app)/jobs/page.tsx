@@ -213,15 +213,13 @@ export default function JobsPage() {
                             aria-label={`Stage for ${job.title || "this role"}`}
                             value={job.status}
                             disabled={movingId === job.id}
-                            onChange={(e) => moveTo(job, e.target.value as JobStatus)}
+                            onValueChange={(next) => moveTo(job, next as JobStatus)}
                             className="h-9 w-[142px] text-[14px]"
-                          >
-                            {JOB_STATUS_ORDER.map((s) => (
-                              <option key={s} value={s}>
-                                {JOB_STATUS_META[s].label}
-                              </option>
-                            ))}
-                          </Select>
+                            options={JOB_STATUS_ORDER.map((s) => ({
+                              value: s,
+                              label: JOB_STATUS_META[s].label,
+                            }))}
+                          />
 
                           <button
                             onClick={() => setEditing(job)}

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Circle, FileText, Mic, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProgressRing } from "@/components/common/progress-ring";
-import { greeting, displayName } from "@/lib/utils";
+import { greeting, firstName } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
 interface HeroSectionProps {
@@ -24,13 +24,13 @@ function subtitle(done: number, total: number): string {
 
 export function HeroSection({ user, progress, onUpload }: HeroSectionProps) {
   const router = useRouter();
-  const name = displayName(user?.name, user?.email);
+  const name = firstName(user?.name, user?.email);
 
   return (
     <section className="grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <h1 className="text-h2 text-text-primary">
-          {greeting()}, {name} <span className="inline-block">👋</span>
+          {greeting()}, {name}
         </h1>
         <p className="mt-2 text-[17px] text-text-secondary">
           {subtitle(progress.done, progress.total)}

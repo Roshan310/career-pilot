@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
-import { TopNav } from "@/components/layout/top-nav";
+import { MobileBar } from "@/components/layout/mobile-bar";
 import { useAuth } from "@/providers/auth-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { ErrorPanel } from "@/components/common/error-panel";
  * The shell renders immediately and only the content area waits on /auth/me.
  * Previously the whole viewport was a centred pulsing logo until the request
  * resolved, then the sidebar, nav and page all appeared at once — a full-page
- * layout shift on every hard refresh. Sidebar and TopNav both tolerate a null
+ * layout shift on every hard refresh. Sidebar and MobileBar both tolerate a null
  * user, so there is nothing to gate them on.
  */
 function ContentSkeleton() {
@@ -51,7 +51,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </a>
       <Sidebar />
       <div className="lg:pl-[280px]">
-        <TopNav />
+        <MobileBar />
         <main id="main-content" className="mx-auto max-w-content px-6 py-8 lg:px-8">
           {error && !user ? (
             <ErrorPanel
