@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,27 +14,53 @@ import { RecentAnalyses } from "@/components/dashboard/recent-analyses";
 import { UploadResumeDialog } from "@/components/resume/upload-resume-dialog";
 import { CreateJobDialog } from "@/components/job/create-job-dialog";
 import { useJobs, useMatches, useResumes } from "@/hooks/use-data";
+import { useDropUnknownId, usePrefill } from "@/hooks/use-prefill";
 import { createMatch } from "@/lib/api/matches";
 import { ApiError } from "@/lib/api/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
+/**
+ * `useSearchParams` lives in the inner component so the Suspense boundary keeps
+ * this route statically prerendered. Without the boundary Next opts the whole
+ * page into dynamic rendering.
+ */
 export default function AnalysisPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-64 rounded-card" />}>
+      <AnalysisPageInner />
+    </Suspense>
+  );
+}
+
+function AnalysisPageInner() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: resumes = [] } = useResumes();
   const { data: jobs = [] } = useJobs();
   const { data: matches = [], isLoading: matchesLoading } = useMatches();
 
-  const [resumeId, setResumeId] = useState("");
-  const [jobId, setJobId] = useState("");
+  // Prefilled when arriving from a resume or job detail page.
+  const prefill = usePrefill();
+  const [resumeId, setResumeId] = useState(prefill.resume);
+  const [jobId, setJobId] = useState(prefill.job);
   const [running, setRunning] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [jobOpen, setJobOpen] = useState(false);
 
+  useDropUnknownId(resumeId, resumes, () => setResumeId(""));
+  useDropUnknownId(jobId, jobs, () => setJobId(""));
+
+  // What is still missing, so the disabled button isn't a dead end.
+  const blockedBy = !resumeId && !jobId
+    ? "Select a resume and a job description to continue."
+    : !resumeId
+      ? "Select a resume to continue."
+      : !jobId
+        ? "Select a job description to continue."
+        : null;
+
   async function runAnalysis() {
-    if (!resumeId || !jobId) {
-      toast.error("Select both a resume and a job description.");
-      return;
-    }
+    if (!resumeId || !jobId) return;
     setRunning(true);
     try {
       const res = await createMatch(resumeId, jobId);
@@ -54,7 +80,7 @@ export default function AnalysisPage() {
       />
 
       <Card className="p-6">
-        <CardTitle><Sparkles size={18} className="text-wine" /> New Analysis</CardTitle>
+        <CardTitle><Sparkles size={18} className="text-wine-fg" /> New Analysis</CardTitle>
         <div className="mt-5 grid gap-5 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Resume</Label>
@@ -63,14 +89,15 @@ export default function AnalysisPage() {
                 <Upload size={16} /> Upload a resume first
               </Button>
             ) : (
-              <Select value={resumeId} onChange={(e) => setResumeId(e.target.value)}>
-                <option value="">Select a resume…</option>
-                {resumes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.file_name || "Untitled resume"} (v{r.version})
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={resumeId}
+                onValueChange={setResumeId}
+                placeholder="Select a resume…"
+                options={resumes.map((r) => ({
+                  value: r.id,
+                  label: `${r.file_name || "Untitled resume"} (v${r.version})`,
+                }))}
+              />
             )}
           </div>
 
@@ -81,14 +108,15 @@ export default function AnalysisPage() {
                 <Plus size={16} /> Add a job description first
               </Button>
             ) : (
-              <Select value={jobId} onChange={(e) => setJobId(e.target.value)}>
-                <option value="">Select a job…</option>
-                {jobs.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {[j.title, j.company].filter(Boolean).join(" · ") || "Untitled role"}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={jobId}
+                onValueChange={setJobId}
+                placeholder="Select a job…"
+                options={jobs.map((j) => ({
+                  value: j.id,
+                  label: [j.title, j.company].filter(Boolean).join(" · ") || "Untitled role",
+                }))}
+              />
             )}
           </div>
         </div>
@@ -99,7 +127,7 @@ export default function AnalysisPage() {
             {running ? "Starting…" : "Run Analysis"}
           </Button>
           <span className="text-[13px] text-text-muted">
-            Analysis runs in the background — you&apos;ll see live progress.
+            {blockedBy ?? "Analysis runs in the background — you'll see live progress."}
           </span>
         </div>
       </Card>

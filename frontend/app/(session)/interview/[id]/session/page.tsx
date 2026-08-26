@@ -43,10 +43,22 @@ export default function InterviewSessionPage() {
   const typed = s.typing;
   const submitting = s.phase === "submitting" || s.phase === "transcribing";
 
+  // A quiet marker so a replay is never mistaken for the original run, and so
+  // "main questions only" is visible rather than inferred from follow-ups that
+  // never arrive.
+  const subtitle =
+    [
+      meta?.job_company,
+      meta && meta.total_attempts > 1 ? `Attempt ${meta.attempt_number}` : null,
+      meta && !meta.allow_follow_ups ? "main questions only" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null;
+
   const header = (
     <SessionHeader
       title={meta?.job_title || "Mock interview"}
-      subtitle={meta?.job_company}
+      subtitle={subtitle}
       progress={s.progress}
       secondsRemaining={s.secondsRemaining}
       right={
@@ -108,7 +120,7 @@ export default function InterviewSessionPage() {
         <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-10">
           <Card className="p-10 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-wine/10">
-              <Mic size={24} className="text-wine" />
+              <Mic size={24} className="text-wine-fg" />
             </div>
             <h2 className="mt-5 text-h3 text-text-primary">
               {s.answered.length > 0 ? "Ready to pick up where you left off" : "Ready when you are"}

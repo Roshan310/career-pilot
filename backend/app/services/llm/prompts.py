@@ -4,17 +4,39 @@ RESUME_PARSING_SCHEMA = """{
   "skills": ["Python", "React", "AWS"],
   "experience": [
     {
-      "title": "", "company": "", "start_date": "", "end_date": "",
+      "title": "", "company": "", "start_date": "May 2024", "end_date": "August 2024",
       "bullets": ["Led a team of 4 engineers to ship X, reducing latency by 30%"]
     }
   ],
+  "projects": [
+    {
+      "name": "Intelligent Document Retrieval",
+      "description": "AI document assistant with semantic search",
+      "technologies": ["FastAPI", "PostgreSQL", "pgvector", "React"],
+      "bullets": ["Integrated embeddings and vector search over uploaded documents"],
+      "start_date": "June 2026", "end_date": "July 2026",
+      "url": ""
+    }
+  ],
   "education": [{ "degree": "", "institution": "", "year": "" }],
-  "certifications": []
+  "certifications": [],
+  "additional_sections": [
+    { "heading": "Awards", "items": ["Dean's List 2024"] },
+    { "heading": "Languages", "items": ["English (fluent)", "Nepali (native)"] }
+  ]
 }"""
 
 # SPECS.md §6.3, verbatim.
 RESUME_PARSING_PROMPT = """Extract structured data from this resume text. Return ONLY valid JSON matching this schema: {schema}.
 Do not invent information not present in the text. If a field is missing, use null or empty array.
+
+Rules:
+- Capture EVERY section the resume contains. Nothing may be dropped.
+- A "Projects" / "Personal Projects" / "Academic Projects" section goes in `projects`, never merged into `experience`. Projects are usually not employment.
+- Any other heading that does not fit a named field (publications, awards, languages, volunteering, leadership, interests) goes in `additional_sections` with its original heading and one entry per line or bullet.
+- `experience` is paid or formal employment only: jobs, internships, contracts, fellowships.
+- Preserve dates exactly as written, including the month ("May 2026", not "2026"). Duration is computed from these, and a missing month makes a three-month internship read as zero.
+- `skills` should list individual technologies, not sentences.
 
 Resume text:
 {raw_text}"""
@@ -25,8 +47,11 @@ def resume_parsing_prompt(raw_text: str) -> str:
 
 
 JOB_PARSING_SCHEMA = """{
-  "required_skills": ["Kubernetes", "Python", "5+ years experience"],
+  "required_skills": ["Kubernetes", "Python", "PostgreSQL"],
   "preferred_skills": ["Terraform", "Go"],
+  "languages": ["English"],
+  "soft_requirements": ["Strong written communication", "Mentoring"],
+  "domain_experience": ["Fintech", "Logistics"],
   "seniority_level": "senior",
   "years_experience_required": 5,
   "key_responsibilities": ["Own infrastructure reliability", "Mentor junior engineers"]
@@ -36,6 +61,18 @@ JOB_PARSING_SCHEMA = """{
 # analogously to it, against the §6.1 parsed_requirements schema.
 JOB_PARSING_PROMPT = """Extract structured requirements from this job description. Return ONLY valid JSON matching this schema: {schema}.
 Do not invent information not present in the text. If a field is missing, use null or empty array.
+
+Rules for `required_skills` and `preferred_skills`:
+- List ATOMIC technologies, one per entry. Split compound phrases:
+  "Modern CSS (Tailwind or similar)" becomes ["CSS", "Tailwind"];
+  "Node.js (Express or similar)" becomes ["Node.js", "Express"];
+  "SQL and NoSQL databases" becomes ["SQL", "NoSQL"].
+- Do NOT put these in the skills lists — each has its own field:
+  spoken/written languages go in `languages`;
+  communication, teamwork, ownership and similar go in `soft_requirements`;
+  industry familiarity (ecommerce, logistics, fintech) goes in `domain_experience`;
+  years of experience goes in `years_experience_required` as a number.
+- A skill entry should be something a candidate could list on a resume.
 
 Job description text:
 {raw_text}"""
@@ -60,7 +97,34 @@ skills or experience the candidate doesn't have evidence for.
 Return ONLY valid JSON: {{"suggestion": "...", "has_honest_connection": true|false}}"""
 
 
-def suggestion_prompt(bullet_text: str, missing_skill: str, relevant_experience_context: str) -> str:
+# A departure from §6.3, which assumes there is always a bullet to rewrite.
+# There isn't: when nothing in the resume relates to the missing skill, handing
+# the model an unrelated sentence and asking it to "rewrite this toward
+# Kubernetes" invites exactly the fabrication the prompt above forbids. Asking
+# the honest question directly produces better advice than asking the wrong
+# question and relying on a guard rail. See docs/decisions.md.
+NO_BULLET_SUGGESTION_PROMPT = """You are helping a candidate improve their resume for a specific job.
+
+Job requires: {missing_skill}
+Candidate's actual experience (for context, do not fabricate beyond this): {relevant_experience_context}
+
+Nothing in the candidate's background relates to this requirement. Do NOT invent a bullet
+or imply experience they don't have. Instead, tell them concretely what to build or learn to
+earn this skill honestly — one specific, achievable step, not generic advice.
+
+Return ONLY valid JSON: {{"suggestion": "...", "has_honest_connection": false}}"""
+
+
+def suggestion_prompt(
+    bullet_text: str | None, missing_skill: str, relevant_experience_context: str
+) -> str:
+    """`bullet_text` is None when no line in the resume relates to the skill —
+    see `suggestions.pick_bullet_for_skill`."""
+    if bullet_text is None:
+        return NO_BULLET_SUGGESTION_PROMPT.format(
+            missing_skill=missing_skill,
+            relevant_experience_context=relevant_experience_context,
+        )
     return SUGGESTION_PROMPT.format(
         bullet_text=bullet_text,
         missing_skill=missing_skill,

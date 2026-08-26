@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, Request
@@ -5,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ServiceUnavailableError
 from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.models.job_description import JobDescription
@@ -21,6 +23,8 @@ from app.schemas.match import (
 )
 from app.services.usage_service import check_and_increment
 from app.workers.queue import enqueue_matching_job
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -72,7 +76,23 @@ async def create_match(
     await db.commit()
     await db.refresh(match)
 
-    enqueue_matching_job(str(match.id))
+    try:
+        # Blocking Redis I/O — off the event loop like every other sync client.
+        await asyncio.to_thread(enqueue_matching_job, str(match.id))
+    except Exception:
+        # The row is already committed and the user already charged. Left as
+        # `pending` it would spin in the UI forever with nothing server-side to
+        # reap it, so mark it failed here and say what actually happened.
+        logger.exception("Could not enqueue matching job for match %s", match.id)
+        match.status = "failed"
+        match.error_message = (
+            "We couldn't start the analysis because the job queue was unavailable. "
+            "Please try again."
+        )
+        await db.commit()
+        raise ServiceUnavailableError(
+            "The analysis queue is temporarily unavailable. Please try again in a moment."
+        )
 
     return MatchStatusResponse(id=match.id, status=match.status)
 

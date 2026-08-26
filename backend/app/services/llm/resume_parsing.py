@@ -1,9 +1,13 @@
-from pydantic import ValidationError
+import logging
 
-from app.core.exceptions import LLMServiceError
+from app.core.config import get_settings
+from app.core.exceptions import LLMConfigurationError, LLMServiceError
 from app.schemas.resume import ParsedResumeData
-from app.services.llm.client import call_json
+from app.services.llm.client import call_structured
 from app.services.llm.prompts import resume_parsing_prompt
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 def parse_resume(raw_text: str) -> ParsedResumeData:
@@ -12,11 +16,17 @@ def parse_resume(raw_text: str) -> ParsedResumeData:
     Validates the LLM's JSON against ParsedResumeData rather than trusting it
     blindly — missing fields coerce to null/[] per the pydantic model's defaults.
     """
-    result = call_json(resume_parsing_prompt(raw_text))
-    if not isinstance(result, dict):
-        raise LLMServiceError("Resume parsing LLM call did not return a JSON object")
-
     try:
-        return ParsedResumeData.model_validate(result)
-    except ValidationError as exc:
-        raise LLMServiceError(f"Resume parsing LLM response failed schema validation: {exc}") from exc
+        # Validation happens inside the retry (see `call_structured`): an
+        # off-schema field is a resampling problem, not a fatal one.
+        return call_structured(resume_parsing_prompt(raw_text), ParsedResumeData,
+            # Extraction, not reasoning: every field is already in the document.
+            thinking_budget=settings.gemini_extractive_thinking_budget,
+        )
+    except LLMConfigurationError:
+        # Says exactly what is wrong already; relabelling it as a parsing
+        # problem would send the user to re-upload a file that is fine.
+        raise
+    except LLMServiceError:
+        logger.warning("Resume parsing failed after every attempt", exc_info=True)
+        raise LLMServiceError("We couldn't read this resume. Please try uploading it again.") from None

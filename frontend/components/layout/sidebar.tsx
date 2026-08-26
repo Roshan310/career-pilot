@@ -2,16 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Crown, MoreVertical } from "lucide-react";
-import { NAV_ITEMS } from "./nav-config";
+import { Crown } from "lucide-react";
+import { NAV_ITEMS, isActive } from "./nav-config";
 import { Logo } from "./logo";
+import { AccountMenu } from "./account-menu";
 import { useAuth } from "@/providers/auth-provider";
-import { cn, displayName, initials } from "@/lib/utils";
-
-function isActive(pathname: string, href: string) {
-  if (href === "/dashboard") return pathname === "/dashboard";
-  return pathname === href || pathname.startsWith(href + "/");
-}
+import { cn } from "@/lib/utils";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -31,23 +27,20 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? "page" : undefined}
               className={cn(
                 "group relative flex h-12 items-center gap-3 rounded-xl px-4 text-[15px] font-medium transition-colors duration-[180ms]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40",
                 active
-                  ? "bg-wine-tint text-wine"
+                  ? "bg-wine-tint text-wine-fg"
                   : "text-text-secondary hover:bg-hover hover:text-text-primary",
               )}
             >
               {active && (
                 <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-wine" />
               )}
-              <Icon size={18} strokeWidth={2} className={active ? "text-wine" : ""} />
+              <Icon size={18} strokeWidth={2} className={active ? "text-wine-fg" : ""} />
               <span className="flex-1">{item.label}</span>
-              {item.comingSoon && (
-                <span className="rounded-badge bg-hover px-2 py-0.5 text-[10px] font-medium text-text-muted">
-                  Soon
-                </span>
-              )}
             </Link>
           );
         })}
@@ -57,32 +50,20 @@ export function Sidebar() {
         {/* Plan card — name reflects the user's real subscription tier. */}
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <Crown size={16} className="text-wine" />
+            <Crown size={16} className="text-wine-fg" />
             <span className="text-sm font-semibold capitalize text-text-primary">
               {user?.subscription_tier ?? "free"} Plan
             </span>
           </div>
           <Link
             href="/settings"
-            className="mt-3 flex h-9 w-full items-center justify-center rounded-btn border border-border text-sm font-medium text-text-primary transition-colors hover:bg-hover"
+            className="mt-3 flex h-9 w-full items-center justify-center rounded-btn border border-border text-sm font-medium text-text-primary transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wine/40"
           >
-            Manage Plan
+            View plan &amp; usage
           </Link>
         </div>
 
-        {/* User row */}
-        <div className="flex items-center gap-3 rounded-2xl px-2 py-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-wine text-[13px] font-semibold text-white">
-            {initials(user?.name, user?.email)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-text-primary">
-              {displayName(user?.name, user?.email)}
-            </p>
-            <p className="truncate text-[12px] text-text-muted">{user?.email ?? ""}</p>
-          </div>
-          <MoreVertical size={16} className="text-text-muted" />
-        </div>
+        <AccountMenu variant="sidebar" />
       </div>
     </aside>
   );

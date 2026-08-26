@@ -19,13 +19,27 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  // Field-level problems belong next to the field. Toasts stay for server errors.
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  // Don't scold someone mid-typing — validate live only after a failed submit.
+  const [submitted, setSubmitted] = useState(false);
+
+  function validate(): { email?: string; password?: string } {
+    const next: { email?: string; password?: string } = {};
+    if (!email.trim()) next.email = "Enter your email address.";
+    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))
+      next.email = "That doesn't look like a valid email address.";
+    if (!password) next.password = "Choose a password.";
+    else if (password.length < 8) next.password = "Use at least 8 characters.";
+    return next;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters.");
-      return;
-    }
+    setSubmitted(true);
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
     setLoading(true);
     try {
       const user = await register(email, password, name);
@@ -62,9 +76,12 @@ export default function RegisterPage() {
             id="email"
             type="email"
             autoComplete="email"
-            required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (submitted) setErrors(validate());
+            }}
+            error={errors.email}
             placeholder="you@example.com"
           />
         </div>
@@ -74,11 +91,18 @@ export default function RegisterPage() {
             id="password"
             type="password"
             autoComplete="new-password"
-            required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (submitted) setErrors(validate());
+            }}
+            error={errors.password}
             placeholder="At least 8 characters"
+            aria-describedby="password-hint"
           />
+          <p id="password-hint" className="text-[13px] text-text-muted">
+            At least 8 characters.
+          </p>
         </div>
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading && <Loader2 size={18} className="animate-spin" />}
@@ -88,7 +112,7 @@ export default function RegisterPage() {
 
       <p className="mt-6 text-center text-[15px] text-text-secondary">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-wine hover:underline">
+        <Link href="/login" className="font-medium text-wine-fg hover:underline">
           Sign in
         </Link>
       </p>

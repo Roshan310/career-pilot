@@ -3,12 +3,13 @@
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Briefcase, CheckCircle2, FileText, ListChecks, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackLink } from "@/components/common/back-link";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJob } from "@/hooks/use-data";
-import { formatDate } from "@/lib/utils";
+import { experienceRequired, formatDate } from "@/lib/utils";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,26 +37,24 @@ export default function JobDetailPage() {
     );
   }
 
-  const req = job.parsed_requirements;
+  // parsed_requirements is JSONB — the database guarantees no shape, and a job
+  // whose LLM parse failed stores null. Dereferencing it raised past every
+  // boundary and blanked the page.
+  const req = job.parsed_requirements ?? {};
 
   return (
     <div className="space-y-6">
-      <button
-        onClick={() => router.push("/jobs")}
-        className="flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
-      >
-        <ArrowLeft size={16} /> Back to Job Descriptions
-      </button>
+      <BackLink href="/jobs">Back to Job Descriptions</BackLink>
 
       <PageHeader
         title={job.title || "Untitled role"}
         subtitle={`${job.company || "—"} · Added ${formatDate(job.created_at)}`}
-        action={<Button onClick={() => router.push("/analysis")}>Match a resume</Button>}
+        action={<Button onClick={() => router.push(`/analysis?job=${job.id}`)}>Match a resume</Button>}
       />
 
       {/* Parsed requirements */}
       <Card className="p-6">
-        <CardTitle><Sparkles size={18} className="text-wine" /> Extracted Requirements</CardTitle>
+        <CardTitle><Sparkles size={18} className="text-wine-fg" /> Extracted Requirements</CardTitle>
         <CardContent className="mt-5 space-y-6">
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-text-secondary">
             {req.seniority_level && (
@@ -63,12 +62,40 @@ export default function JobDetailPage() {
                 <Briefcase size={15} /> {req.seniority_level}
               </span>
             )}
-            {req.years_experience_required != null && (
+            {experienceRequired(req.years_experience_required) && (
               <span className="flex items-center gap-1.5">
-                <CheckCircle2 size={15} /> {req.years_experience_required}+ years experience
+                <CheckCircle2 size={15} /> {experienceRequired(req.years_experience_required)}
               </span>
             )}
           </div>
+
+          {((req.languages?.length ?? 0) > 0 ||
+            (req.soft_requirements?.length ?? 0) > 0 ||
+            (req.domain_experience?.length ?? 0) > 0) && (
+            <div className="space-y-3 rounded-2xl border border-divider bg-background p-4">
+              <p className="text-[13px] text-text-muted">
+                Listed by the posting, but not scored as skill gaps.
+              </p>
+              {[
+                ["Languages", req.languages],
+                ["Ways of working", req.soft_requirements],
+                ["Domain experience", req.domain_experience],
+              ].map(([label, values]) =>
+                (values as string[] | undefined)?.length ? (
+                  <div key={label as string}>
+                    <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+                      {label as string}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(values as string[]).map((v, i) => (
+                        <Badge key={i} variant="neutral">{v}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : null,
+              )}
+            </div>
+          )}
 
           {req.required_skills?.length > 0 && (
             <div>
@@ -101,7 +128,7 @@ export default function JobDetailPage() {
       {/* Key responsibilities */}
       {req.key_responsibilities?.length > 0 && (
         <Card className="p-6">
-          <CardTitle><ListChecks size={18} className="text-wine" /> Key Responsibilities</CardTitle>
+          <CardTitle><ListChecks size={18} className="text-wine-fg" /> Key Responsibilities</CardTitle>
           <CardContent className="mt-4">
             <ul className="space-y-2">
               {req.key_responsibilities.map((r, i) => (
@@ -118,9 +145,9 @@ export default function JobDetailPage() {
       {/* Original pasted text */}
       {job.raw_text && (
         <Card className="p-6">
-          <CardTitle><FileText size={18} className="text-wine" /> Original Job Description</CardTitle>
+          <CardTitle><FileText size={18} className="text-wine-fg" /> Original Job Description</CardTitle>
           <CardContent className="mt-4">
-            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-text-secondary">
+            <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-text-secondary">
               {job.raw_text}
             </p>
           </CardContent>

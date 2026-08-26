@@ -1,0 +1,105 @@
+{
+  "_source": "Real user report: Resume_MERN.pdf vs 'Junior Software Engineer @ LeftclickTech' scored 0.469 and the projects section was never parsed. Contact details redacted.",
+  "resume_raw_text": "Candidate Name\nSoftware Developer\n(cid:131) +977-9800000000 # candidate@example.com (cid:239) Candidate Name § candidate-gh\nSummary\nSoftware Developer with hands-on experience building production-ready full-stack applications using React,\nTypeScript, Node.js, Express, PostgreSQL, and MongoDB. Experienced in designing RESTful APIs, implementing\nauthentication, integrating LLM APIs, and developing AI-powered applications using Retrieval-Augmented\nGeneration (RAG), embeddings, and vector databases. Familiar with AWS, Linux, Docker, CI/CD pipelines, and\nmodern Git workflows. Quick learner with strong problem-solving skills and a passion for building scalable software.\nSkills\nLanguages: Python, JavaScript, TypeScript, SQL\nFrontend: React, Next.js, Tailwind CSS, HTML5, CSS3\nBackend: Node.js, Express.js, FastAPI, REST APIs, JWT Authentication\nDatabases: PostgreSQL, MongoDB, SQLite, pgvector\nAI Technologies: OpenAI API, Google Gemini API, RAG, Vector Embeddings, LLM APIs\nCloud & DevOps: AWS, Docker, Git, GitHub, CI/CD, Linux, Postman\nExperience\nSoftware Developer Intern May 2026 – August 2026\nArbyte Solution (Hybrid) Tools Used: React, Node, Express, Typescript, Prisma, MongoDB, Docker, Git\n– Developed a production-ready AI-powered document assistant using React, TypeScript, Node.js, Express, MongoDB, and\nLLM APIs, enabling intelligent document search through Retrieval-Augmented Generation (RAG).\n– Implemented REST APIs, JWT authentication, vector embeddings, semantic search, and modular backend architecture\nto deliver scalable AI-assisted features.\n– Designed responsive user interfaces using React and Tailwind CSS while collaborating through Git feature branches, pull\nrequests, and code reviews.\n– Built a collaborative project management platform supporting organizations, task management, and real-time team\ncollaboration.\n– Participated in deployment, Docker containerization, Linux server configuration, AWS deployment, and CI/CD workflows\nfor application delivery.\nProjects\nIntelligent Document Retrieval (RAG) | Python, FastAPI, SQLAlchemy, PostgreSQL, pgvector, ReactJune 2026 – July 2026\n– Built a full-stack AI document assistant using React, TypeScript, Express.js, PostgreSQL, and pgvector, allowing users\nto upload documents and interact with them through natural language conversations.\n– Integrated Google Gemini APIs to generate embeddings and AI responses while implementing semantic vector search\nusing pgvector.\n– Implemented JWT authentication, document management, REST APIs, modular backend architecture, and responsive\nfrontend interfaces using Tailwind CSS.\n– Containerized the application with Docker and deployed it on Linux-based infrastructure using modern Git workflows.\nEvent Management System | Python, FastAPI, SQLAlchemy, PostgreSQL March 2023 – June 2023\n– Developed RESTful backend services using FastAPI and PostgreSQL with secure JWT-based authentication and\nrole-based authorization.\n– Designed normalized PostgreSQL schemas and optimized database queries for efficient event and user management.\n– Built modular, maintainable APIs following clean architecture and REST principles while debugging complex backend\nissues.\nInterpreter | Python June 2024 – January 2025\n– Built a simple interpreter for a Pascal-like language, implementing lexical analysis, parsing, and execution using an\nAbstract Syntax Tree (AST).\n– Implemented tokenization, parsing, and AST-based execution to evaluate user-defined programs.\nBlog and Portfolio Site | Django, SQLite, Django ORM July 2022 – August 2022\n– Developed my own blog and portfolio site using Django and Django ORM with SQLite as the database\n– Supports comment on individual blogs.\nEducation\nBachelor in Computer Engineering +977-9800000000\nIOE, Thapathali Engineering Campus",
+  "resume_parsed_data": {
+    "skills": [
+      "Python",
+      "JavaScript",
+      "TypeScript",
+      "SQL",
+      "React",
+      "Next.js",
+      "Tailwind CSS",
+      "HTML5",
+      "CSS3",
+      "Node.js",
+      "Express.js",
+      "FastAPI",
+      "REST APIs",
+      "JWT Authentication",
+      "PostgreSQL",
+      "MongoDB",
+      "SQLite",
+      "pgvector",
+      "OpenAI API",
+      "Google Gemini API",
+      "RAG",
+      "Vector Embeddings",
+      "LLM APIs",
+      "AWS",
+      "Docker",
+      "Git",
+      "GitHub",
+      "CI/CD",
+      "Linux",
+      "Postman"
+    ],
+    "contact": {
+      "name": "Candidate",
+      "email": "candidate@example.com",
+      "phone": null,
+      "location": "Kathmandu, Nepal"
+    },
+    "summary": "Software Developer with hands-on experience building production-ready full-stack applications using React, TypeScript, Node.js, Express, PostgreSQL, and MongoDB. Experienced in designing RESTful APIs, implementing authentication, integrating LLM APIs, and developing AI-powered applications using Retrieval-Augmented Generation (RAG), embeddings, and vector databases. Familiar with AWS, Linux, Docker, CI/CD pipelines, and modern Git workflows. Quick learner with strong problem-solving skills and a passion for building scalable software.",
+    "education": [
+      {
+        "year": "2022 - 2026",
+        "degree": "Bachelor in Computer Engineering",
+        "institution": "IOE, Thapathali Engineering Campus"
+      }
+    ],
+    "experience": [
+      {
+        "title": "Software Developer Intern",
+        "bullets": [
+          "Developed a production-ready AI-powered document assistant using React, TypeScript, Node.js, Express, MongoDB, and LLM APIs, enabling intelligent document search through Retrieval-Augmented Generation (RAG).",
+          "Implemented REST APIs, JWT authentication, vector embeddings, semantic search, and modular backend architecture to deliver scalable AI-assisted features.",
+          "Designed responsive user interfaces using React and Tailwind CSS while collaborating through Git feature branches, pull requests, and code reviews.",
+          "Built a collaborative project management platform supporting organizations, task management, and real-time team collaboration.",
+          "Participated in deployment, Docker containerization, Linux server configuration, AWS deployment, and CI/CD workflows for application delivery."
+        ],
+        "company": "Arbyte Solution",
+        "end_date": "August 2026",
+        "start_date": "May 2026"
+      }
+    ],
+    "certifications": []
+  },
+  "job_parsed_requirements": {
+    "required_skills": [
+      "React",
+      "TypeScript",
+      "Modern CSS (Tailwind or similar)",
+      "Node.js (Express or similar)",
+      "REST APIs",
+      "Authentication/authorization",
+      "Server-side logic",
+      "WebSockets/Socket.io",
+      "LLM APIs (OpenAI, Anthropic, or similar)",
+      "UI/UX principles",
+      "SQL and NoSQL databases",
+      "Git & GitHub",
+      "Written and spoken English"
+    ],
+    "seniority_level": null,
+    "preferred_skills": [
+      "Linux Servers",
+      "AWS or cloud platforms",
+      "Prompt engineering",
+      "Embeddings",
+      "Vector databases",
+      "Ecommerce platforms",
+      "Shipment/logistics tracking systems"
+    ],
+    "key_responsibilities": [
+      "Build frontend and backend features for a brand-new platform",
+      "Develop AI-powered features by integrating LLM APIs",
+      "Write clean, tested, and maintainable code",
+      "Collaborate with senior engineers to integrate third-party APIs and AI services",
+      "Participate in code reviews and daily stand-ups",
+      "Translate business requirements into working technical features",
+      "Continuously learn modern technologies and grow with the platform"
+    ],
+    "years_experience_required": 0.25
+  }
+}

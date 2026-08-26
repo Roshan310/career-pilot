@@ -3,7 +3,6 @@
 Mocked at the httpx boundary, so these run without an ElevenLabs key or network.
 """
 
-import uuid
 from unittest.mock import patch
 
 import httpx
@@ -29,7 +28,6 @@ def test_audio_is_generated_once_and_served_from_cache_after():
     """The cost control, not a nicety: TTS bills per character, so a reconnect or
     a replay must not re-bill a question the candidate already heard."""
     store: dict[str, bytes] = {}
-    session_id = uuid.uuid4()
 
     with (
         _configured(),
@@ -37,17 +35,55 @@ def test_audio_is_generated_once_and_served_from_cache_after():
         patch.object(tts.storage_service, "get_bytes", side_effect=store.get),
         patch.object(tts.storage_service, "upload_bytes", side_effect=lambda k, c, t: store.update({k: c})),
     ):
-        first = tts.question_audio(session_id, 1, "Tell me about a hard bug.")
-        second = tts.question_audio(session_id, 1, "Tell me about a hard bug.")
+        first = tts.question_audio("Tell me about a hard bug.")
+        second = tts.question_audio("Tell me about a hard bug.")
 
     assert first == second == b"audio-bytes"
     assert post.call_count == 1  # the second call never left the process
-    assert tts.cache_key(session_id, 1) in store
+    assert tts.cache_key("Tell me about a hard bug.") in store
 
 
-def test_each_turn_is_cached_separately():
-    session_id = uuid.uuid4()
-    assert tts.cache_key(session_id, 1) != tts.cache_key(session_id, 2)
+def test_the_same_question_in_a_different_session_is_a_cache_hit():
+    """What makes replaying an interview free. The key used to contain the
+    session id, so a replay — identical questions, identical voice — missed
+    every object and re-billed audio already paid for."""
+    store: dict[str, bytes] = {}
+
+    with (
+        _configured(),
+        patch.object(tts.httpx, "post", return_value=FakeResponse(content=b"audio-bytes")) as post,
+        patch.object(tts.storage_service, "get_bytes", side_effect=store.get),
+        patch.object(tts.storage_service, "upload_bytes", side_effect=lambda k, c, t: store.update({k: c})),
+    ):
+        # Two entirely unrelated sessions; nothing about them is passed in.
+        tts.question_audio("Walk me through your RAG project.")
+        tts.question_audio("Walk me through your RAG project.")
+
+    assert post.call_count == 1
+    assert len(store) == 1
+
+
+def test_different_questions_are_cached_separately():
+    assert tts.cache_key("Tell me about a hard bug.") != tts.cache_key("Why this role?")
+
+
+def test_the_key_changes_when_the_voice_does():
+    """Otherwise switching voice, model, format or the hand-tuned voice_settings
+    would keep serving audio in the old delivery from cache, forever."""
+    text = "Tell me about a hard bug."
+    baseline = tts.cache_key(text)
+
+    with patch.object(tts.settings, "eleven_labs_voice_id", "some-other-voice"):
+        assert tts.cache_key(text) != baseline
+    with patch.object(tts.settings, "eleven_labs_model_id", "eleven_multilingual_v2"):
+        assert tts.cache_key(text) != baseline
+    with patch.object(tts.settings, "eleven_labs_output_format", "mp3_22050_32"):
+        assert tts.cache_key(text) != baseline
+    with patch.object(tts, "VOICE_SETTINGS_VERSION", "v2"):
+        assert tts.cache_key(text) != baseline
+
+    # ...and is stable when nothing changed.
+    assert tts.cache_key(text) == baseline
 
 
 def test_no_key_configured_raises_the_recoverable_error():
@@ -56,7 +92,7 @@ def test_no_key_configured_raises_the_recoverable_error():
     AppError it would surface as a failed interview instead of a quiet one."""
     with patch.object(tts.settings, "eleven_labs_api_key", ""):
         with pytest.raises(tts.TTSUnavailableError, match="no ELEVEN_LABS_API_KEY"):
-            tts.question_audio(uuid.uuid4(), 1, "Anything.")
+            tts.question_audio("Anything.")
 
 
 def test_vendor_error_body_survives_into_the_message():
@@ -70,7 +106,7 @@ def test_vendor_error_body_survives_into_the_message():
         patch.object(tts.httpx, "post", return_value=FakeResponse(status_code=402, text=body)),
     ):
         with pytest.raises(tts.TTSUnavailableError, match="paid_plan_required"):
-            tts.question_audio(uuid.uuid4(), 1, "Anything.")
+            tts.question_audio("Anything.")
 
 
 def test_network_failure_is_not_left_as_a_raw_httpx_error():
@@ -80,7 +116,7 @@ def test_network_failure_is_not_left_as_a_raw_httpx_error():
         patch.object(tts.httpx, "post", side_effect=httpx.ConnectError("no route to host")),
     ):
         with pytest.raises(tts.TTSUnavailableError, match="no route to host"):
-            tts.question_audio(uuid.uuid4(), 1, "Anything.")
+            tts.question_audio("Anything.")
 
 
 def test_a_cache_write_failure_still_returns_the_audio():
@@ -93,4 +129,4 @@ def test_a_cache_write_failure_still_returns_the_audio():
         patch.object(tts.storage_service, "upload_bytes", side_effect=OSError("minio is down")),
         patch.object(tts.httpx, "post", return_value=FakeResponse(content=b"audio-bytes")),
     ):
-        assert tts.question_audio(uuid.uuid4(), 1, "Anything.") == b"audio-bytes"
+        assert tts.question_audio("Anything.") == b"audio-bytes"

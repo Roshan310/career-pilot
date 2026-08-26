@@ -50,6 +50,11 @@ export function displayName(name: string | null | undefined, email?: string): st
   return "there";
 }
 
+/** Just the first name — the dashboard greeting is warmer without a surname. */
+export function firstName(name: string | null | undefined, email?: string): string {
+  return displayName(name, email).split(/\s+/)[0];
+}
+
 /** matched/missing skills come back as either bare strings or {skill, ...} objects. */
 export function skillName(entry: unknown): string {
   if (typeof entry === "string") return entry;
@@ -64,4 +69,23 @@ export function initials(name: string | null | undefined, email?: string): strin
   const parts = base.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return base.slice(0, 2).toUpperCase();
+}
+
+/**
+ * Renders an experience requirement in the unit a person would use.
+ *
+ * The value is a real number of years because sub-year requirements are real —
+ * an internship asking for three months comes back as 0.25, and "0.25+ years
+ * experience" is not how anyone says that.
+ */
+export function experienceRequired(years: number | null | undefined): string | null {
+  if (years == null || years < 0) return null;
+  if (years === 0) return "No experience required";
+  if (years < 1) {
+    const months = Math.max(1, Math.round(years * 12));
+    return `${months}+ ${months === 1 ? "month" : "months"} experience`;
+  }
+  // Drop a trailing ".0" so a whole number doesn't read like a measurement.
+  const label = Number.isInteger(years) ? `${years}` : years.toFixed(1);
+  return `${label}+ ${years === 1 ? "year" : "years"} experience`;
 }

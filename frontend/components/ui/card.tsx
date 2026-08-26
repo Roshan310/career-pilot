@@ -30,8 +30,9 @@ const CardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTML
 );
 CardTitle.displayName = "CardTitle";
 
+/** Body of a card. Callers may still override the spacing via className. */
 const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => <div ref={ref} className={cn("", className)} {...props} />,
+  ({ className, ...props }, ref) => <div ref={ref} className={cn("mt-4", className)} {...props} />,
 );
 CardContent.displayName = "CardContent";
 

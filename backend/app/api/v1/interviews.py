@@ -2,12 +2,12 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ServiceUnavailableError, UnprocessableError
 from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.models.interview import InterviewSession, SessionReport
@@ -18,6 +18,7 @@ from app.models.user import User
 from app.schemas.interview import (
     InterviewCreateRequest,
     InterviewListItem,
+    InterviewReplayRequest,
     InterviewSessionResponse,
     SessionReportResponse,
     TranscriptionResponse,
@@ -26,6 +27,30 @@ from app.schemas.interview import (
 )
 from app.services import interview_service, transcription, tts
 from app.services.usage_service import check_limit, increment
+
+_AUDIO_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_capped_audio(request: Request, audio: UploadFile) -> bytes:
+    """Read an answer recording, refusing to buffer past the transcription limit.
+
+    `await audio.read()` pulled the whole body into memory first and only then
+    handed it to `transcribe_answer`, which is where the 25MB check lives — so
+    the check could not protect the thing it was there to protect.
+    """
+    limit = transcription.MAX_AUDIO_BYTES
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        raise UnprocessableError("Audio file is too large.")
+
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await audio.read(_AUDIO_CHUNK_BYTES):
+        total += len(chunk)
+        if total > limit:
+            raise UnprocessableError("Audio file is too large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +110,35 @@ async def create_interview(
     await check_limit(db, current_user, "interview")
 
     session = await interview_service.start_session(db, current_user, resume, job, match, body.mode)
+    # Charged here and deliberately NOT in `replay_interview` — a replay
+    # generates no question plan and re-uses cached audio, so metering it the
+    # same as a fresh interview would price the cheap path like the expensive one.
     await increment(db, current_user, "interview")
 
+    return await interview_service.build_session_response(db, session)
+
+
+@router.post("/{session_id}/replay", response_model=InterviewSessionResponse, status_code=201)
+@limiter.limit("10/minute")
+async def replay_interview(
+    request: Request,
+    session_id: uuid.UUID,
+    body: InterviewReplayRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Practise a finished interview again, over its stored questions.
+
+    No `check_limit` / `increment`: replays are free by decision. They skip the
+    5-15s question-generation call entirely and serve every main question from
+    the content-addressed audio cache, so the only per-run cost is answer
+    evaluation. Charging a full interview for that would make the feature
+    pointless. The rate limit above is what bounds abuse instead.
+    """
+    source = await _get_owned_session(db, session_id, current_user)
+    session = await interview_service.replay_session(
+        db, current_user, source, allow_follow_ups=body.allow_follow_ups
+    )
     return await interview_service.build_session_response(db, session)
 
 
@@ -101,6 +153,7 @@ async def list_interviews(
             JobDescription.title,
             JobDescription.company,
             SessionReport.overall_score,
+            SessionReport.dimension_averages,
         )
         .outerjoin(JobDescription, InterviewSession.job_id == JobDescription.id)
         .outerjoin(SessionReport, SessionReport.session_id == InterviewSession.id)
@@ -108,11 +161,29 @@ async def list_interviews(
         .order_by(InterviewSession.started_at.desc())
     )
 
+    rows = result.all()
+
+    # Attempt numbering, computed here rather than queried. Every one of this
+    # user's sessions is already in `rows`, so grouping them in Python costs
+    # nothing; a window function would be a second pass over the same data.
+    # A session that was never replayed groups alone and comes out "1 of 1".
+    chains: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for session, *_ in rows:
+        root = session.replay_of_session_id or session.id
+        chains.setdefault(root, []).append(session.id)
+    # `rows` is ordered newest-first; attempts read oldest-first.
+    attempt_index = {
+        session_id: position
+        for ids in chains.values()
+        for position, session_id in enumerate(reversed(ids), start=1)
+    }
+
     items: list[InterviewListItem] = []
-    for session, title, company, overall_score in result.all():
+    for session, title, company, overall_score, dimension_averages in rows:
         duration_minutes = None
         if session.ended_at is not None:
             duration_minutes = round((session.ended_at - session.started_at).total_seconds() / 60, 1)
+        root = session.replay_of_session_id or session.id
         items.append(
             InterviewListItem(
                 id=session.id,
@@ -121,6 +192,11 @@ async def list_interviews(
                 job_title=title,
                 job_company=company,
                 overall_score=overall_score,
+                dimension_averages=dimension_averages,
+                replay_of_session_id=session.replay_of_session_id,
+                allow_follow_ups=session.allow_follow_ups,
+                attempt_number=attempt_index[session.id],
+                total_attempts=len(chains[root]),
                 started_at=session.started_at,
                 ended_at=session.ended_at,
                 duration_minutes=duration_minutes,
@@ -178,10 +254,10 @@ async def get_turn_audio(
     try:
         # Sync boto3 + a ~1s HTTP round trip. Off the event loop, or one slow
         # synthesis stalls every other request the API is serving.
-        audio = await asyncio.to_thread(tts.question_audio, session.id, turn_number, turn.question_text)
+        audio = await asyncio.to_thread(tts.question_audio, turn.question_text)
     except tts.TTSUnavailableError as exc:
         logger.info("question audio unavailable for %s turn %s: %s", session_id, turn_number, exc)
-        raise HTTPException(status_code=503, detail="Question audio is unavailable.") from exc
+        raise ServiceUnavailableError("Question audio is unavailable.") from exc
 
     return Response(
         content=audio,
@@ -208,7 +284,7 @@ async def transcribe_answer(
     """
     await _get_owned_session(db, session_id, current_user)  # ownership check
 
-    content = await audio.read()
+    content = await _read_capped_audio(request, audio)
     transcript = await asyncio.to_thread(
         transcription.transcribe_answer, content, audio.content_type
     )
@@ -216,7 +292,12 @@ async def transcribe_answer(
 
 
 @router.post("/{session_id}/complete", response_model=SessionReportResponse)
+# Was the only unlimited write endpoint, and it runs a full report aggregation
+# on every call — which is also what made the duplicate-report race easy to hit.
+# Generous, because completing is idempotent and a client retry is legitimate.
+@limiter.limit("20/minute")
 async def complete_interview(
+    request: Request,
     session_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -226,7 +307,9 @@ async def complete_interview(
 
 
 @router.post("/{session_id}/abandon", response_model=InterviewSessionResponse)
+@limiter.limit("20/minute")
 async def abandon_interview(
+    request: Request,
     session_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

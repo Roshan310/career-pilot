@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +40,28 @@ class InterviewSession(Base):
     match_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("matches.id", ondelete="SET NULL"), nullable=True
     )
+    # Set when this session re-runs an earlier one's stored question plan. Points
+    # at the *root* attempt, never at the immediately preceding one, so all
+    # attempts of one interview share a single parent and "attempt N of M" is a
+    # grouping rather than a recursive walk. SET NULL for the same reason as the
+    # three FKs above: deleting the original must not delete its replays.
+    replay_of_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("interview_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Chosen per replay. Off means main questions only, which is the one mode
+    # that costs nothing in TTS: every question comes from cache and no new text
+    # is ever synthesized. It does NOT save an LLM call — `evaluate_answer`
+    # returns the score and the follow-up verdict together.
+    #
+    # On the session rather than passed per request because the state machine
+    # consults it on every answer, and a session that changed its own rules
+    # mid-run would produce a report nobody could interpret.
+    allow_follow_ups: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
     mode: Mapped[str] = mapped_column(String, default="jd_specific", nullable=False)
     status: Mapped[str] = mapped_column(String, default="in_progress", nullable=False)
     question_plan: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -44,6 +77,11 @@ class InterviewTurn(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    __table_args__ = (
+        # `get_turn` looks up exactly this pair on every answer submission.
+        Index("idx_interview_turns_session_turn", "session_id", "turn_number"),
+    )
+
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("interview_sessions.id", ondelete="CASCADE"),
@@ -69,13 +107,24 @@ class SessionReport(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # A session has exactly one report. Enforced in the database because
+    # `complete_session`'s status check is not atomic: two concurrent completes
+    # both passed it and both inserted, after which the report endpoint's
+    # `scalar_one_or_none()` raised MultipleResultsFound *permanently* for that
+    # user. The constraint also supplies the index for the outer join that every
+    # GET /api/interviews performs.
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("interview_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     overall_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     strengths: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     improvement_areas: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     gap_coverage: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # {"structure": 3.4, "specificity": 2.8, ...} — what the trend chart plots.
+    dimension_averages: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Session-level rollup of interview_turns.speech_metrics (SPECS.md §7.4).
     speech_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

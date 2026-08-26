@@ -2,9 +2,14 @@ import type { Config } from "tailwindcss";
 
 /**
  * Design tokens from docs/FRONTEND.md.
- * Colors reference CSS variables (see globals.css) so a dark theme can be
- * layered on later without touching component code.
+ *
+ * Every color resolves through a CSS variable defined for BOTH themes in
+ * globals.css. The `rgb(var(--x) / <alpha-value>)` form is what lets an alpha
+ * modifier work (`bg-wine/10`, `ring-wine/40`, `bg-background/80`); a bare
+ * `var(--x)` makes Tailwind drop the modifier and emit nothing.
  */
+const withAlpha = (v: string) => `rgb(var(${v}) / <alpha-value>)`;
+
 const config: Config = {
   darkMode: ["class", '[data-theme="dark"]'],
   content: [
@@ -15,32 +20,37 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Brand — Premium Wine Red
+        // Brand — Premium Wine Red.
+        // `wine` = solid fill under white text. `wine.fg` = brand red as text or
+        // icon on a surface. Identical in light, deliberately different in dark.
         wine: {
-          DEFAULT: "#B4232D",
-          500: "#B4232D",
-          hover: "#9E1E27",
-          pressed: "#851821",
-          tint: "#FCEEEF",
+          DEFAULT: withAlpha("--color-wine"),
+          500: withAlpha("--color-wine"),
+          hover: withAlpha("--color-wine-hover"),
+          pressed: withAlpha("--color-wine-pressed"),
+          fg: withAlpha("--color-wine-fg"),
+          tint: withAlpha("--color-wine-tint"),
         },
-        // Semantic surfaces (var-backed for theming)
-        background: "var(--color-background)",
-        sidebar: "var(--color-sidebar)",
-        card: "var(--color-card)",
-        border: "var(--color-border)",
-        "border-hover": "var(--color-border-hover)",
-        divider: "var(--color-divider)",
-        hover: "var(--color-hover)",
+        // Semantic surfaces
+        background: withAlpha("--color-background"),
+        sidebar: withAlpha("--color-sidebar"),
+        card: withAlpha("--color-card"),
+        border: withAlpha("--color-border"),
+        "border-hover": withAlpha("--color-border-hover"),
+        divider: withAlpha("--color-divider"),
+        hover: withAlpha("--color-hover"),
         // Text
-        "text-primary": "var(--color-text-primary)",
-        "text-secondary": "var(--color-text-secondary)",
-        "text-muted": "var(--color-text-muted)",
-        "text-disabled": "var(--color-text-disabled)",
+        "text-primary": withAlpha("--color-text-primary"),
+        "text-secondary": withAlpha("--color-text-secondary"),
+        "text-muted": withAlpha("--color-text-muted"),
+        "text-disabled": withAlpha("--color-text-disabled"),
         // State
-        success: { DEFAULT: "#16A34A", bg: "#F0FDF4" },
-        warning: { DEFAULT: "#EA580C", bg: "#FFF7ED" },
-        error: { DEFAULT: "#DC2626", bg: "#FEF2F2" },
-        info: { DEFAULT: "#2563EB", bg: "#EFF6FF" },
+        success: { DEFAULT: withAlpha("--color-success"), bg: withAlpha("--color-success-bg") },
+        warning: { DEFAULT: withAlpha("--color-warning"), bg: withAlpha("--color-warning-bg") },
+        error: { DEFAULT: withAlpha("--color-error"), bg: withAlpha("--color-error-bg") },
+        info: { DEFAULT: withAlpha("--color-info"), bg: withAlpha("--color-info-bg") },
+        // Progress-ring track
+        "ring-track": withAlpha("--color-ring-track"),
       },
       borderRadius: {
         card: "16px",

@@ -41,18 +41,44 @@ export interface EducationItem {
   year?: string | null;
 }
 
+/**
+ * A personal, academic or open-source project. First-class rather than part of
+ * `additional_sections`: for an early-career candidate the projects section is
+ * the evidence, and the schema previously had nowhere to put it — so entire
+ * sections were silently dropped at parse time.
+ */
+export interface ProjectItem {
+  name?: string | null;
+  description?: string | null;
+  technologies: string[];
+  bullets: string[];
+  start_date?: string | null;
+  end_date?: string | null;
+  url?: string | null;
+}
+
+/** Any heading the fixed fields don't cover: publications, awards, languages. */
+export interface AdditionalSection {
+  heading: string;
+  items: string[];
+}
+
 export interface ParsedResumeData {
   contact: ContactInfo;
   summary?: string | null;
   skills: string[];
   experience: ExperienceItem[];
+  projects?: ProjectItem[];
   education: EducationItem[];
   certifications: string[];
+  additional_sections?: AdditionalSection[];
 }
 
 export interface Resume {
   id: string;
   file_name: string | null;
+  /** Whether the original upload is still downloadable. */
+  has_file: boolean;
   raw_text: string;
   parsed_data: ParsedResumeData;
   version: number;
@@ -70,12 +96,42 @@ export interface ResumeListItem {
 export interface ParsedJobRequirements {
   required_skills: string[];
   preferred_skills: string[];
+  /** Kept out of the skills lists so "English" isn't reported as a missing
+   *  technical skill. Displayed, never scored as a gap. */
+  languages?: string[];
+  soft_requirements?: string[];
+  domain_experience?: string[];
   seniority_level?: string | null;
   years_experience_required?: number | null;
   key_responsibilities: string[];
 }
 
-export interface Job {
+/** The application pipeline, in board order. Mirrors JOB_STATUSES on the API. */
+export const JOB_STATUSES = [
+  "saved",
+  "applied",
+  "screening",
+  "interviewing",
+  "offer",
+  "rejected",
+] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export const JOB_PRIORITIES = ["low", "normal", "high"] as const;
+export type JobPriority = (typeof JOB_PRIORITIES)[number];
+
+/** Application state, shared by the detail and list shapes. */
+export interface JobTracking {
+  status: JobStatus;
+  priority: JobPriority;
+  applied_at: string | null;
+  deadline: string | null;
+  notes: string | null;
+  source_url: string | null;
+  updated_at: string;
+}
+
+export interface Job extends JobTracking {
   id: string;
   title: string | null;
   company: string | null;
@@ -84,7 +140,7 @@ export interface Job {
   created_at: string;
 }
 
-export interface JobListItem {
+export interface JobListItem extends JobTracking {
   id: string;
   title: string | null;
   company: string | null;
@@ -95,6 +151,21 @@ export interface JobCreateRequest {
   title?: string | null;
   company?: string | null;
   raw_text: string;
+}
+
+/**
+ * PATCH body. Every key optional, and omitting a key is NOT the same as sending
+ * null — null clears the field, omission leaves it alone.
+ */
+export interface JobUpdateRequest {
+  title?: string | null;
+  company?: string | null;
+  status?: JobStatus;
+  priority?: JobPriority;
+  applied_at?: string | null;
+  deadline?: string | null;
+  notes?: string | null;
+  source_url?: string | null;
 }
 
 // ---- Matches ----
@@ -113,7 +184,17 @@ export interface MissingSkill {
 
 export interface Suggestion {
   missing_skill?: string;
+  /**
+   * The resume line this rewrite targets, chosen for *this* missing skill.
+   * Absent when nothing in the resume relates to the skill — then the
+   * suggestion is advice about experience to gain, not a rewrite.
+   */
+  original_bullet?: string;
+  /** Where that line came from: "Backend Intern at Acme", "Project: RAG". */
+  original_bullet_source?: string;
   suggestion?: string;
+  /** "required" | "preferred" — how urgent this gap is. */
+  priority?: string;
   has_honest_connection?: boolean;
   [k: string]: unknown;
 }
@@ -172,6 +253,14 @@ export interface InterviewListItem {
   job_title: string | null;
   job_company: string | null;
   overall_score: number | null;
+  /** {structure, specificity, relevance} out of 5. Null on reports written before this was stored. */
+  dimension_averages: Record<string, number> | null;
+  /** The root attempt this session re-runs, or null if it is the original. */
+  replay_of_session_id: string | null;
+  allow_follow_ups: boolean;
+  /** Both 1 for a session that was never replayed, so "1 of 1" needs no special case. */
+  attempt_number: number;
+  total_attempts: number;
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -244,11 +333,31 @@ export interface TurnDetail {
   created_at: string;
 }
 
+/**
+ * One planned question. `based_on` is the whole differentiator — the resume
+ * detail or JD requirement the question came from — and it reached the client
+ * on every session while being rendered nowhere.
+ */
+export interface QuestionPlanItem {
+  question_text: string;
+  question_type?: string | null;
+  /** The LLM's own label, e.g. "Technical Deep Dive". */
+  category?: string | null;
+  targets_gap?: string | null;
+  based_on?: string | null;
+}
+
 export interface InterviewSession {
   id: string;
+  resume_id: string | null;
+  job_id: string | null;
+  match_id: string | null;
+  replay_of_session_id: string | null;
+  /** False on a "main questions only" run. */
+  allow_follow_ups: boolean;
   mode: string;
   status: InterviewStatus | string;
-  question_plan: unknown[] | null;
+  question_plan: QuestionPlanItem[] | null;
   started_at: string;
   ended_at: string | null;
   current_question: CurrentQuestion | null;
@@ -281,14 +390,63 @@ export interface TurnSubmitResponse {
   progress: SessionProgress | null;
 }
 
+/** Stable identifiers emitted by `backend/app/services/report_findings.py`. The
+ *  wording for each lives in `components/interview/report-findings.tsx` — the
+ *  backend deliberately sends facts and a code, never prose. */
+export type FindingCode =
+  | "structure_strong"
+  | "specificity_strong"
+  | "relevance_strong"
+  | "all_questions_answered"
+  | "pace_comfortable"
+  | "fillers_low"
+  | "structure_weak"
+  | "specificity_weak"
+  | "relevance_weak"
+  | "questions_skipped"
+  | "pace_fast"
+  | "pace_slow"
+  | "fillers_high"
+  | "long_pause"
+  | "no_scored_answers";
+
+export interface FindingExemplar {
+  turn_number: number;
+  question_text: string;
+  score: number | null;
+  targets_gap: string | null;
+}
+
+export interface ReportFinding {
+  kind: "dimension" | "delivery" | "participation";
+  code: FindingCode;
+  /** "relative" means no dimension cleared an absolute threshold, so this is a
+   *  ranking rather than a verdict — the copy hedges accordingly. */
+  basis: "absolute" | "relative" | null;
+  dimension: "structure" | "specificity" | "relevance" | null;
+  average: number | null;
+  turns_counted: number;
+  metric: Record<string, number | null> | null;
+  exemplar: FindingExemplar | null;
+}
+
+/** The pre-findings shape, still on any report the backfill hasn't touched.
+ *  JSONB enforces no schema, so this stays supported rather than assumed away. */
+export interface LegacyReportItem {
+  turn_number: number;
+  question_text: string;
+  targets_gap?: string | null;
+}
+
+export type ReportItem = ReportFinding | LegacyReportItem;
+
 export interface SessionReport {
   id: string;
   session_id: string;
   overall_score: number | null;
-  strengths: { turn_number: number; question_text: string }[] | null;
-  improvement_areas:
-    | { turn_number: number; question_text: string; targets_gap: string | null }[]
-    | null;
+  strengths: ReportItem[] | null;
+  improvement_areas: ReportItem[] | null;
+  dimension_averages: Record<string, number> | null;
   gap_coverage: { addressed: string[]; still_open: string[] } | null;
   speech_metrics: SpeechMetrics | null;
   created_at: string;

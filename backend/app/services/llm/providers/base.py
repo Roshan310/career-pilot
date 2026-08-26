@@ -25,15 +25,38 @@ class ProviderError(Exception):
 
 
 class TransientProviderError(ProviderError):
-    """Worth another attempt on the same provider: rate limits, 5xx, timeouts,
-    empty responses. Malformed JSON is folded in here too (the client raises it),
+    """Worth another attempt on the same provider: 5xx, timeouts, empty
+    responses. Malformed JSON is folded in here too (the client raises it),
     since the model is non-deterministic and a second sample often parses."""
 
 
+class RateLimitedError(TransientProviderError):
+    """Out of quota on this key, specifically.
+
+    Still transient — the quota refills — but it wants different handling from a
+    generic blip. Each API key is a separate project with a separate per-minute
+    allowance, so when another key is available the fastest path is to switch to
+    it *now*; sleeping first would delay a call that was always going to succeed
+    elsewhere. Backing off only makes sense once there is nothing left to fail
+    over to.
+    """
+
+
 class PermanentProviderError(ProviderError):
-    """Retrying the same provider cannot help: bad API key, no credit, a request
-    this provider will always reject. Skip straight to the next provider —
-    burning a retry here just adds latency to every single call."""
+    """Retrying the same provider cannot help: no credit, a request this
+    provider will always reject. Skip straight to the next provider — burning a
+    retry here just adds latency to every single call."""
+
+
+class ProviderConfigurationError(PermanentProviderError):
+    """The provider is set up wrong: unknown model, bad or revoked key.
+
+    A *subclass* of permanent, so every existing handler still catches it — but
+    distinguishable, because failing over to the next key cannot help either:
+    every provider in the chain reads the same model name. The user-facing
+    consequence differs too. "Try again" is advice that can never work, and the
+    operator needs to know which setting to change.
+    """
 
 
 @runtime_checkable
@@ -49,8 +72,12 @@ class LLMProvider(Protocol):
         only one key set still works."""
         ...
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, thinking_budget: int | None = None) -> str:
         """Raw model output, expected (but not guaranteed) to be JSON.
+
+        `thinking_budget=0` asks the model not to reason before answering, for
+        extractive tasks that gain nothing from it. None leaves the model
+        default. A provider that cannot honour the request must still answer.
 
         Raises TransientProviderError / PermanentProviderError. Must not raise
         bare exceptions — the client relies on the distinction.
@@ -63,5 +90,16 @@ class LLMProvider(Protocol):
         Same error contract as `generate`. Kept on this protocol rather than in a
         separate one because it shares the thing that matters — the API key, and
         therefore the quota the failover is routing around.
+        """
+        ...
+
+    def embed(self, text: str, dimensions: int) -> list[float]:
+        """A vector of exactly `dimensions` floats.
+
+        Same error contract again. Unlike the other two, this one carries a
+        constraint the protocol cannot express: only providers sharing an
+        embedding model may appear in the same chain, because vectors from
+        different models are not comparable and mixing them silently corrupts
+        similarity search.
         """
         ...

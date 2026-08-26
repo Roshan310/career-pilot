@@ -11,6 +11,8 @@ import { RecentAnalyses } from "@/components/dashboard/recent-analyses";
 import { RecentInterviews } from "@/components/dashboard/recent-interviews";
 import { StatCard } from "@/components/common/stat-card";
 import { UploadResumeDialog } from "@/components/resume/upload-resume-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useReviewedReports } from "@/hooks/use-reviewed-reports";
 
 function withinLastWeek(iso: string): boolean {
   const then = new Date(iso).getTime();
@@ -35,7 +37,8 @@ export default function DashboardPage() {
     () => interviews.find((i) => i.status === "completed" && i.overall_score !== null) ?? null,
     [interviews],
   );
-  const { data: report } = useInterviewReport(latestInterview?.id ?? "");
+  const { data: report, isLoading: reportLoading } = useInterviewReport(latestInterview?.id ?? "");
+  const { hasAny: hasReviewedFeedback } = useReviewedReports();
 
   // ---- derived stats ----
   const doneMatches = matches.filter((m) => m.status === "done");
@@ -48,25 +51,36 @@ export default function DashboardPage() {
     );
   }, [doneMatches]);
 
+  // Without this the cards mount showing 0 and count up to the real figure once
+  // the queries land, which looks like a glitch rather than a reveal.
+  const statsLoading = matchesLoading || interviewsLoading;
+
   const matchesThisWeek = doneMatches.filter((m) => withinLastWeek(m.created_at)).length;
   const interviewsThisWeek = completedInterviews.filter((i) => withinLastWeek(i.started_at)).length;
 
-  // ---- today's progress (derived where possible) ----
+  // ---- progress ----
+  // Every item is derived from something real. The previous list had two entries
+  // hardcoded to `false`, so the ring could never pass 3/5, and "Feedback
+  // reviewed" was aliased to "interview completed" — it ticked whether or not the
+  // report was ever opened.
   const hasResume = resumes.length > 0;
   const hasAnalysis = doneMatches.length > 0;
   const hasInterview = completedInterviews.length > 0;
   const progressItems = [
+    { label: "Resume uploaded", done: hasResume },
     { label: "Resume analyzed", done: hasAnalysis },
     { label: "Interview completed", done: hasInterview },
-    { label: "Feedback reviewed", done: hasInterview },
-    { label: "Practice weak areas", done: false },
-    { label: "Apply to jobs", done: false },
+    { label: "Feedback reviewed", done: hasReviewedFeedback },
   ];
   const progressDone = progressItems.filter((i) => i.done).length;
 
-  const up = (n: number, unit: string) => (
-    <span className="text-success">↑ {n} {unit}</span>
-  );
+  // A green "↑ 0 this week" on a brand-new account reads as a broken widget.
+  const up = (n: number, unit: string) =>
+    n > 0 ? (
+      <span className="text-success">↑ {n} {unit}</span>
+    ) : (
+      <span className="text-text-muted">No change {unit}</span>
+    );
 
   return (
     <div className="space-y-8">
@@ -85,7 +99,7 @@ export default function DashboardPage() {
         <InterviewReadinessCard
           listItem={latestInterview}
           report={report}
-          loading={interviewsLoading}
+          loading={interviewsLoading || (!!latestInterview && reportLoading)}
         />
       </section>
 
@@ -97,6 +111,12 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+        {statsLoading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[88px] rounded-card" />
+          ))
+        ) : (
+          <>
         <StatCard
           icon={FileText}
           label="Resumes Analyzed"
@@ -118,6 +138,8 @@ export default function DashboardPage() {
           suffix="%"
           index={2}
         />
+          </>
+        )}
       </section>
 
       <UploadResumeDialog open={uploadOpen} onOpenChange={setUploadOpen} />

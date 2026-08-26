@@ -66,7 +66,12 @@ def session_progress(
         # is what the candidate will actually be asked.
         "main_questions_planned": min(len(question_plan), settings.interview_hard_cap_questions),
         "follow_ups_used": followups_since_last_main(turns),
-        "max_follow_ups_per_question": settings.interview_max_followups_per_question,
+        # 0 when this session will never ask one. The live UI renders this
+        # number directly, and "0 of 2 follow-ups" through a run that cannot
+        # produce a follow-up is a small lie the candidate can see.
+        "max_follow_ups_per_question": (
+            settings.interview_max_followups_per_question if session.allow_follow_ups else 0
+        ),
         "seconds_remaining": seconds_remaining(session),
         "hard_cap_minutes": settings.interview_hard_cap_minutes,
         "hard_capped": is_hard_capped(session, turns),
@@ -87,7 +92,11 @@ def decide_next_step(
     if is_hard_capped(session, turns):
         return {"action": "wrap_up"}
 
-    if llm_next_action == "follow_up" and llm_follow_up_question:
+    # `allow_follow_ups` is off for a "main questions only" replay. Falling
+    # through here is the same path taken when the per-question cap is already
+    # spent, so no new control flow — and every follow-up never asked is a
+    # question never synthesized, which is what makes that mode free.
+    if session.allow_follow_ups and llm_next_action == "follow_up" and llm_follow_up_question:
         if followups_since_last_main(turns) < settings.interview_max_followups_per_question:
             return {
                 "action": "follow_up",

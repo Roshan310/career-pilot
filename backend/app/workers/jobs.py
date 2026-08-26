@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from app.schemas.job import ParsedJobRequirements
 from app.schemas.resume import ParsedResumeData
 from app.services.llm.suggestions import generate_suggestions
 from app.services.matching_service import compute_scores
+
+logger = logging.getLogger(__name__)
 
 
 async def compute_match(db: AsyncSession, match_id: uuid.UUID) -> None:
@@ -28,6 +31,9 @@ async def compute_match(db: AsyncSession, match_id: uuid.UUID) -> None:
     ).scalar_one_or_none()
 
     if resume is None or job is None or resume.embedding is None or job.embedding is None:
+        logger.warning(
+            "Match %s cannot be scored: resume=%s job=%s", match_id, resume is not None, job is not None
+        )
         match.status = "failed"
         match.error_message = "Resume or job description is missing required data (embedding)"
         await db.commit()
@@ -39,12 +45,17 @@ async def compute_match(db: AsyncSession, match_id: uuid.UUID) -> None:
         scores = compute_scores(
             parsed_resume, parsed_job, resume.raw_text, list(resume.embedding), list(job.embedding)
         )
-    except Exception as exc:
+    except Exception:
         # scoring itself failing IS fatal (SPECS.md §9 distinguishes this from
         # suggestion generation, which degrades gracefully instead) — there's no
         # meaningful partial result to persist without at least the sub-scores.
+        #
+        # The exception text stays in the log. It used to be written into
+        # error_message, which MatchResponse serves straight to the browser —
+        # raw vendor errors carry quota metric names and project ids.
+        logger.exception("Scoring failed for match %s", match_id)
         match.status = "failed"
-        match.error_message = f"Scoring failed: {exc}"
+        match.error_message = "We couldn't score this match. Please try running it again."
         await db.commit()
         return
 
@@ -56,6 +67,9 @@ async def compute_match(db: AsyncSession, match_id: uuid.UUID) -> None:
     except Exception:
         # §9: "skip scoring detail rather than failing the whole [match]" — the
         # score breakdown just computed above is still valid and worth keeping.
+        # Logged because a persistent suggestion failure is otherwise invisible:
+        # the match looks fine and simply never has suggestions.
+        logger.warning("Suggestion generation failed for match %s", match_id, exc_info=True)
         match.suggestions = []
 
     match.status = "done"

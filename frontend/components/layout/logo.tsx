@@ -1,15 +1,17 @@
 import { cn } from "@/lib/utils";
 
-/** CareerPilot wordmark with the wine-red "R"-style mark from the design. */
+/**
+ * CareerPilot wordmark. The mark is a paper plane — the previous glyph was a
+ * letter "R", which matched neither the product name nor the repository name.
+ * Keep in sync with app/icon.svg, which draws the same path as the favicon.
+ */
 export function Logo({ className, showWordmark = true }: { className?: string; showWordmark?: boolean }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
       <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden>
         <rect width="32" height="32" rx="9" fill="#B4232D" />
-        <path
-          d="M11 23V9h6.2c2.7 0 4.5 1.6 4.5 4.1 0 1.8-1 3.2-2.6 3.8L22 23h-3.3l-2.4-5.3h-2v5.3H11Zm3.3-7.9h2.6c1.2 0 2-.7 2-1.9 0-1.1-.8-1.8-2-1.8h-2.6v3.7Z"
-          fill="#fff"
-        />
+        <path d="M25.5 6.5 L6.5 14.2 L14.2 17.8 Z" fill="#fff" />
+        <path d="M25.5 6.5 L14.2 17.8 L18 25.5 Z" fill="#fff" fillOpacity="0.72" />
       </svg>
       {showWordmark && (
         <span className="text-[19px] font-bold tracking-tight text-text-primary">CareerPilot</span>

@@ -9,14 +9,50 @@ quota pool — `build_provider_chain()` turns each key into its own provider and
 from google import genai
 from google.genai import types
 
+import logging
+
 from app.core.config import get_settings
 from app.services.llm.prompts import TRANSCRIPTION_PROMPT
 from app.services.llm.providers.base import (
     PermanentProviderError,
+    ProviderConfigurationError,
+    RateLimitedError,
     TransientProviderError,
 )
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
+
+
+# Models observed to reject a thinking budget, so the next request doesn't pay
+# for the same discovery. Process-local and deliberately not persisted: it costs
+# one call after a restart, and a wrong entry cannot outlive the process.
+_THINKING_UNSUPPORTED: set[str] = set()
+
+
+def _looks_like_thinking_rejection(exc: Exception) -> bool:
+    """Whether a rejection could plausibly be about the thinking config.
+
+    Deliberately broad. The first version checked for "thinking" or "thought" in
+    the message, on the assumption that the API names the offending parameter.
+    It does not — gemini-3.6-flash rejects the budget with a bare
+    "Request contains an invalid argument.", so the fallback never fired and a
+    latency optimisation became a hard 400 on every upload.
+
+    An invalid-argument rejection is now enough. The thinking config is the only
+    thing we add to an otherwise plain request, so retrying without it is both
+    the obvious suspect and a strictly better diagnostic: if it still fails, the
+    cause is genuinely something else and the error says so.
+    """
+    text = str(exc).lower()
+    return (
+        "thinking" in text
+        or "thought" in text
+        or "invalid_argument" in text
+        or "invalid argument" in text
+        or "400" in text
+    )
 
 # Clients are cached per API key and built lazily (not at import time) so these
 # modules can be imported — and mocked in tests — with no key configured.
@@ -25,7 +61,16 @@ _clients: dict[str, genai.Client] = {}
 
 def _get_client(api_key: str) -> genai.Client:
     if api_key not in _clients:
-        _clients[api_key] = genai.Client(api_key=api_key)
+        # Without an explicit timeout google-genai waits indefinitely. Combined
+        # with ATTEMPTS_PER_PROVIDER x number of keys, a single hung connection
+        # could pin a request — and, before these calls moved off the event loop,
+        # the entire worker — with no upper bound at all. ElevenLabs has had
+        # timeouts since it was added; this closes the same gap for Gemini.
+        # google-genai takes milliseconds here.
+        _clients[api_key] = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=settings.gemini_timeout_seconds * 1000),
+        )
     return _clients[api_key]
 
 
@@ -38,12 +83,54 @@ class GeminiProvider:
     def configured(self) -> bool:
         return bool(self.api_key)
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, thinking_budget: int | None = None) -> str:
+        """Raw model output.
+
+        `thinking_budget=0` disables reasoning for extractive work — pulling
+        fields out of a document that already contains them. It is the dominant
+        latency cost on a task that gains nothing from deliberation.
+
+        The allowed range is model-dependent (the SDK says so explicitly), and a
+        rejected value comes back as a 400, which `classify` treats as permanent
+        — so a wrong guess would break parsing outright rather than merely
+        slowing it. Hence the fallback: try once more without the setting, and
+        say so in the log rather than failing.
+        """
+        model = settings.gemini_llm_model
+        if model in _THINKING_UNSUPPORTED:
+            thinking_budget = None
+
+        try:
+            return self._generate(prompt, thinking_budget)
+        except ProviderConfigurationError:
+            # A wrong model name or key is never fixed by dropping the thinking
+            # config, and the detector is broad enough to have caught it.
+            raise
+        except PermanentProviderError as exc:
+            if thinking_budget is None or not _looks_like_thinking_rejection(exc):
+                raise
+            _THINKING_UNSUPPORTED.add(model)
+            logger.warning(
+                "%s rejected thinking_budget=%s for model %s; retrying without it and "
+                "not asking again this process. Set GEMINI_EXTRACTIVE_THINKING_BUDGET= "
+                "(empty) in .env to skip this probe entirely. Detail: %s",
+                self.name,
+                thinking_budget,
+                model,
+                exc,
+            )
+            return self._generate(prompt, None)
+
+    def _generate(self, prompt: str, thinking_budget: int | None) -> str:
+        config = types.GenerateContentConfig(response_mime_type="application/json")
+        if thinking_budget is not None:
+            config.thinking_config = types.ThinkingConfig(thinking_budget=thinking_budget)
+
         try:
             response = _get_client(self.api_key).models.generate_content(
                 model=settings.gemini_llm_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
+                config=config,
             )
         except Exception as exc:  # google-genai raises its own hierarchy
             raise classify(exc, self.name) from exc
@@ -51,6 +138,28 @@ class GeminiProvider:
         if not response.text:
             raise TransientProviderError(self.name, "empty response")
         return response.text
+
+    def embed(self, text: str, dimensions: int) -> list[float]:
+        """Embed text at the column's exact width.
+
+        Note this is the one operation that is *not* vendor-neutral in practice.
+        Failing over between two keys is safe because both address the same
+        model, and therefore the same vector space; a genuinely different vendor
+        could not be added to this chain without corrupting `semantic_score`,
+        because vectors from two models are not comparable. See `embed_text`.
+        """
+        try:
+            response = _get_client(self.api_key).models.embed_content(
+                model=settings.gemini_embedding_model,
+                contents=text,
+                config=types.EmbedContentConfig(output_dimensionality=dimensions),
+            )
+        except Exception as exc:
+            raise classify(exc, self.name) from exc
+
+        if not response.embeddings:
+            raise TransientProviderError(self.name, "no embedding returned")
+        return list(response.embeddings[0].values)
 
     def transcribe(self, audio: bytes, mime_type: str) -> str:
         """Gemini takes audio as an ordinary input part, so transcription needs no
@@ -131,9 +240,16 @@ def classify(exc: Exception, provider: str = "gemini") -> Exception:
     """
     text = str(exc)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
-        return TransientProviderError(provider, f"rate limited: {text[:200]}")
+        return RateLimitedError(provider, f"rate limited: {text[:200]}")
+    if "404" in text or "NOT_FOUND" in text or "is not found for API version" in text:
+        # The model name is wrong. Every key in the chain reads the same setting,
+        # so retrying and failing over are both guaranteed to fail identically —
+        # this used to be classified transient and burned four attempts saying so.
+        return ProviderConfigurationError(
+            provider, f"model not found — check GEMINI_LLM_MODEL: {text[:200]}"
+        )
     if "401" in text or "403" in text or "PERMISSION_DENIED" in text or "API key" in text:
-        return PermanentProviderError(provider, f"auth failed: {text[:200]}")
+        return ProviderConfigurationError(provider, f"auth failed — check the API key: {text[:200]}")
     if "400" in text or "INVALID_ARGUMENT" in text:
         return PermanentProviderError(provider, f"rejected request: {text[:200]}")
     return TransientProviderError(provider, text[:200])

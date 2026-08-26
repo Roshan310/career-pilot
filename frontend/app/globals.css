@@ -2,43 +2,142 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Design tokens (docs/FRONTEND.md).
+ *
+ * Values are raw "R G B" channels, not hex, so Tailwind can compose them with an
+ * alpha modifier: `rgb(var(--color-wine) / <alpha-value>)` makes `bg-wine/10` and
+ * `ring-wine/40` work. A plain `var(--color-x)` silently DROPS the alpha modifier
+ * in Tailwind 3 — `bg-background/80` on the sticky header emitted no rule at all.
+ *
+ * Every token is defined in both themes. Anything hardcoded here instead of
+ * var-backed is a token that breaks the moment dark mode is on.
+ */
 :root {
-  --color-background: #fafafa;
-  --color-sidebar: #fcfcfc;
-  --color-card: #ffffff;
-  --color-border: #e9e9ec;
-  --color-border-hover: #dddee2;
-  --color-divider: #efeff2;
-  --color-hover: #f3f4f6;
+  --color-background: 250 250 250;
+  --color-sidebar: 252 252 252;
+  --color-card: 255 255 255;
+  --color-border: 233 233 236;
+  --color-border-hover: 221 222 226;
+  --color-divider: 239 239 242;
+  --color-hover: 243 244 246;
 
-  --color-text-primary: #111111;
-  --color-text-secondary: #6b7280;
-  --color-text-muted: #9ca3af;
-  --color-text-disabled: #d1d5db;
+  --color-text-primary: 17 17 17;
+  --color-text-secondary: 107 114 128;
+  --color-text-muted: 156 163 175;
+  --color-text-disabled: 209 213 219;
+
+  /* Brand. `wine` is the solid fill (always paired with white text); `wine-fg`
+     is the same brand red used as *text or icon* on a light surface. They split
+     in dark mode, where a fill readable under white text and a glyph readable on
+     a near-black card cannot be the same red. */
+  --color-wine: 180 35 45;
+  --color-wine-hover: 158 30 39;
+  --color-wine-pressed: 133 24 33;
+  --color-wine-fg: 180 35 45;
+  --color-wine-tint: 252 238 239;
+
+  /* State. `-bg` is the tinted surface, the bare name is the text/icon on it. */
+  --color-success: 22 163 74;
+  --color-success-bg: 240 253 244;
+  --color-warning: 234 88 12;
+  --color-warning-bg: 255 247 237;
+  --color-error: 220 38 38;
+  --color-error-bg: 254 242 242;
+  --color-info: 37 99 235;
+  --color-info-bg: 239 246 255;
+
+  --color-ring-track: 242 242 244;
 }
 
 :root[data-theme="dark"] {
-  --color-background: #0d0d0f;
-  --color-sidebar: #121214;
-  --color-card: #17171a;
-  --color-border: #26262b;
-  --color-border-hover: #33333a;
-  --color-divider: #202024;
-  --color-hover: #1e1e22;
+  --color-background: 13 13 15;
+  --color-sidebar: 18 18 20;
+  --color-card: 23 23 26;
+  --color-border: 38 38 43;
+  --color-border-hover: 51 51 58;
+  --color-divider: 32 32 36;
+  --color-hover: 30 30 34;
 
-  --color-text-primary: #f5f5f6;
-  --color-text-secondary: #a1a1aa;
-  --color-text-muted: #71717a;
-  --color-text-disabled: #52525b;
+  --color-text-primary: 245 245 246;
+  --color-text-secondary: 161 161 170;
+  --color-text-muted: 113 113 122;
+  --color-text-disabled: 82 82 91;
+
+  /* Fill brightens just enough to stay lively without dropping white text below
+     4.5:1. The foreground brightens much further — the light-mode red is ~2.4:1
+     on a #17171a card, which is unreadable. */
+  --color-wine: 201 48 59;
+  --color-wine-hover: 216 68 80;
+  --color-wine-pressed: 180 35 45;
+  --color-wine-fg: 255 139 146;
+  --color-wine-tint: 46 22 25;
+
+  /* Backgrounds become low-luminance tints of the hue rather than near-white
+     blocks; foregrounds lift to clear AA on a dark card. */
+  --color-success: 74 222 128;
+  --color-success-bg: 16 40 26;
+  --color-warning: 251 146 60;
+  --color-warning-bg: 44 26 12;
+  --color-error: 248 113 113;
+  --color-error-bg: 46 20 20;
+  --color-info: 96 165 250;
+  --color-info-bg: 16 32 58;
+
+  --color-ring-track: 38 38 43;
 }
 
 * {
-  border-color: var(--color-border);
+  border-color: rgb(var(--color-border));
+}
+
+/**
+ * Landing-page backdrop: a hairline grid masked to fade out well before it
+ * reaches the headline. Texture without a second thing competing for attention.
+ *
+ * Drawn from the *text* token at a low alpha, not the border token: `--color-
+ * border` in light mode is #e9e9ec against a #fafafa page, which is under two
+ * levels of grey apart and vanished completely. Deriving it from the foreground
+ * keeps the same faint line in both themes.
+ */
+/**
+ * The hero entrance. Deliberately CSS and not Framer Motion, unlike every reveal
+ * below the fold: a JS animation starts from `opacity: 0` in the server HTML and
+ * only lifts once hydration runs, so a slow bundle — or a background tab
+ * throttling rAF — leaves the headline invisible on a page that has otherwise
+ * finished loading. This runs at first paint and owes nothing to the bundle.
+ *
+ * `both` fill matters twice over: it holds the from-state during the delay, and
+ * it is what makes the reduced-motion override below (which collapses the
+ * duration rather than removing the animation) land on the finished state.
+ */
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.landing-rise {
+  animation: landing-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-grid {
+  background-image:
+    linear-gradient(to right, rgb(var(--color-text-primary) / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--color-text-primary) / 0.055) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 55% at 50% 0%, #000 10%, transparent 72%);
+  mask-image: radial-gradient(ellipse 90% 55% at 50% 0%, #000 10%, transparent 72%);
 }
 
 body {
-  background-color: var(--color-background);
-  color: var(--color-text-primary);
+  background-color: rgb(var(--color-background));
+  color: rgb(var(--color-text-primary));
   font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -50,12 +149,19 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: rgb(var(--color-border));
   border-radius: 999px;
-  border: 2px solid var(--color-background);
+  border: 2px solid rgb(var(--color-background));
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-hover);
+  background: rgb(var(--color-border-hover));
+}
+
+/* Keyboard users get a visible ring everywhere, including on elements that only
+   set focus styles ad hoc. Pointer users never see it. */
+:focus-visible {
+  outline: 2px solid rgb(var(--color-wine-fg));
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -12,10 +12,17 @@ QUESTION_PLAN = [
 ]
 
 
-def make_session(started_at: datetime | None = None) -> InterviewSession:
+def make_session(
+    started_at: datetime | None = None, *, allow_follow_ups: bool = True
+) -> InterviewSession:
+    # `allow_follow_ups` is passed explicitly because SQLAlchemy applies column
+    # defaults at INSERT, not at construction — an unsaved session would carry
+    # None, which no persisted row ever can (the column is NOT NULL with a
+    # server default of true).
     return InterviewSession(
         started_at=started_at or datetime.now(UTC),
         question_plan=QUESTION_PLAN,
+        allow_follow_ups=allow_follow_ups,
     )
 
 
@@ -178,3 +185,52 @@ def test_seconds_remaining_floors_at_zero_when_the_cap_has_passed():
     )
     assert sm.seconds_remaining(expired) == 0.0
     assert sm.session_progress(expired, [], QUESTION_PLAN)["hard_capped"] is True
+
+
+# --- follow-ups disabled: the "main questions only" replay ------------------
+
+
+def test_follow_ups_are_not_asked_when_the_session_disabled_them():
+    """The load-bearing assertion behind the zero-TTS claim. Every follow-up
+    that is never asked is text that is never synthesized, so this is what makes
+    a main-questions-only replay free — the audio for the plan is all cached."""
+    session = make_session(allow_follow_ups=False)
+    turns = [make_turn(1, "main", targets_gap="gap-1")]
+
+    step = sm.decide_next_step(
+        session, turns, QUESTION_PLAN, turns[0], "follow_up", "Can you elaborate on that?"
+    )
+
+    assert step["action"] == "next_question"
+    assert step["question_text"] == QUESTION_PLAN[1]["question_text"]
+
+
+def test_the_same_evaluation_does_produce_a_follow_up_when_enabled():
+    """Pairs with the test above: proves the flag is what changed the outcome,
+    not some unrelated regression in the follow-up path."""
+    session = make_session(allow_follow_ups=True)
+    turns = [make_turn(1, "main", targets_gap="gap-1")]
+
+    step = sm.decide_next_step(
+        session, turns, QUESTION_PLAN, turns[0], "follow_up", "Can you elaborate on that?"
+    )
+
+    assert step["action"] == "follow_up"
+
+
+def test_progress_reports_no_follow_ups_available_when_disabled():
+    """The live UI renders this number directly. Showing "0 of 2 follow-ups"
+    through a run that cannot produce one reads as a bug, not a setting."""
+    session = make_session(allow_follow_ups=False)
+    progress = sm.session_progress(session, [make_turn(1, "main")], QUESTION_PLAN)
+
+    assert progress["max_follow_ups_per_question"] == 0
+
+
+def test_disabling_follow_ups_does_not_change_the_hard_cap():
+    """The §7.2 caps are safety limits, not follow-up policy — a shorter
+    interview must not become an unbounded one."""
+    started = datetime.now(UTC) - timedelta(minutes=settings.interview_hard_cap_minutes + 1)
+    session = make_session(started, allow_follow_ups=False)
+
+    assert sm.is_hard_capped(session, []) is True

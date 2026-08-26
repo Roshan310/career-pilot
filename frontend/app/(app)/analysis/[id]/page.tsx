@@ -1,12 +1,16 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, CheckCircle2, Lightbulb, Loader2, TriangleAlert } from "lucide-react";
+import { AlertCircle, CheckCircle2, Lightbulb, Loader2, Mic, TriangleAlert } from "lucide-react";
+import { BackLink } from "@/components/common/back-link";
+import { CopyButton } from "@/components/common/copy-button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/common/progress-ring";
 import { CountUp } from "@/components/common/count-up";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorPanel } from "@/components/common/error-panel";
 import { useJob, useMatchPolling } from "@/hooks/use-data";
 import { scorePct, skillName } from "@/lib/utils";
 
@@ -35,25 +39,35 @@ function SubScore({ label, score }: { label: string; score: number | null }) {
 export default function MatchReportPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { data: match, isLoading } = useMatchPolling(id);
+  const { data: match, isLoading, isSlow, isStalled } = useMatchPolling(id);
   const { data: job } = useJob(match?.status === "done" ? match.job_id : "");
 
   const back = (
-    <button
-      onClick={() => router.push("/analysis")}
-      className="flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
-    >
-      <ArrowLeft size={16} /> Back to Analysis
-    </button>
+    <BackLink href="/analysis">Back to Analysis</BackLink>
   );
 
   if (isLoading || !match) {
     return (
       <div className="space-y-6">
         {back}
-        <Card className="p-14 text-center">
-          <Loader2 size={28} className="mx-auto animate-spin text-wine" />
-          <p className="mt-4 text-text-secondary">Loading analysis…</p>
+        <Skeleton className="h-64 rounded-card" />
+        <Skeleton className="h-40 rounded-card" />
+      </div>
+    );
+  }
+
+  if (isStalled) {
+    return (
+      <div className="space-y-6">
+        {back}
+        <Card className="p-6">
+          <ErrorPanel
+            title="This analysis is stuck"
+            description="Scoring never finished. That usually means the background worker isn't running — running a new analysis is the fastest way forward."
+            action={
+              <Button onClick={() => router.push("/analysis")}>Run a new analysis</Button>
+            }
+          />
         </Card>
       </div>
     );
@@ -65,11 +79,13 @@ export default function MatchReportPage() {
         {back}
         <Card className="p-14 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-wine-tint">
-            <Loader2 size={26} className="animate-spin text-wine" />
+            <Loader2 size={26} className="animate-spin text-wine-fg" />
           </div>
           <h3 className="mt-5 text-h3 text-text-primary">Analyzing your resume…</h3>
           <p className="mt-2 text-text-secondary">
-            We&apos;re scoring the match and generating suggestions. This usually takes a few seconds.
+            {isSlow
+              ? "This is taking longer than usual. It's still running — you can leave this page and come back."
+              : "We're scoring the match and generating suggestions. This usually takes a few seconds."}
           </p>
         </Card>
       </div>
@@ -98,6 +114,14 @@ export default function MatchReportPage() {
   const missing = match.missing_skills ?? [];
   const suggestions = match.suggestions ?? [];
 
+  // matching_service stores {skill, priority} on every entry; the UI used to
+  // render skillName() alone, so a must-have gap looked exactly like a
+  // nice-to-have and everything read as equally urgent.
+  const priorityOf = (s: unknown) =>
+    typeof s === "object" && s !== null ? (s as { priority?: string }).priority : undefined;
+  const mustHave = missing.filter((s) => priorityOf(s) === "required");
+  const niceToHave = missing.filter((s) => priorityOf(s) !== "required");
+
   return (
     <div className="space-y-6">
       {back}
@@ -124,6 +148,26 @@ export default function MatchReportPage() {
               <SubScore label="Experience Match" score={match.experience_match_score} />
               <SubScore label="Keyword Density" score={match.keyword_density_score} />
             </div>
+
+            {/* The whole point of the gap analysis. Carrying all three ids is
+                what makes the interview's gap-analysis option appear: it only
+                offers matches whose resume AND job equal the current selection. */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Button
+                onClick={() =>
+                  router.push(
+                    `/interview?resume=${match.resume_id}&job=${match.job_id}&match=${match.id}`,
+                  )
+                }
+              >
+                <Mic size={18} /> Practice these gaps
+              </Button>
+              <span className="text-[13px] text-text-muted">
+                {missing.length
+                  ? `We'll build questions around your ${missing.length} gap${missing.length === 1 ? "" : "s"}.`
+                  : "Rehearse this role with questions from your resume."}
+              </span>
+            </div>
           </div>
         </div>
       </Card>
@@ -143,11 +187,36 @@ export default function MatchReportPage() {
 
         <Card className="p-6">
           <CardTitle><TriangleAlert size={18} className="text-warning" /> Missing Skills</CardTitle>
-          <CardContent className="mt-4 flex flex-wrap gap-2">
-            {missing.length ? (
-              missing.map((s, i) => <Badge key={i} variant="warning">{skillName(s)}</Badge>)
-            ) : (
+          <CardContent className="mt-4 space-y-4">
+            {missing.length === 0 ? (
               <p className="text-[15px] text-text-secondary">Great — no required skills are missing.</p>
+            ) : (
+              <>
+                {mustHave.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+                      Must have
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {mustHave.map((s, i) => (
+                        <Badge key={i} variant="error">{skillName(s)}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {niceToHave.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-text-muted">
+                      Nice to have
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {niceToHave.map((s, i) => (
+                        <Badge key={i} variant="warning">{skillName(s)}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -155,22 +224,52 @@ export default function MatchReportPage() {
 
       {/* Suggestions */}
       <Card className="p-6">
-        <CardTitle><Lightbulb size={18} className="text-wine" /> Rewrite Suggestions</CardTitle>
+        <CardTitle><Lightbulb size={18} className="text-wine-fg" /> Rewrite Suggestions</CardTitle>
         <CardContent className="mt-4 space-y-4">
           {suggestions.length ? (
-            suggestions.map((s, i) => (
-              <div key={i} className="rounded-2xl border border-border bg-background p-4">
-                {s.missing_skill && (
-                  <Badge variant="wine" className="mb-2">{s.missing_skill}</Badge>
-                )}
-                <p className="text-[15px] leading-relaxed text-text-primary">{s.suggestion}</p>
-                {s.has_honest_connection === false && (
-                  <p className="mt-2 text-[13px] text-warning">
-                    Note: only use this if it reflects genuine experience.
+            suggestions.map((s, i) => {
+              // A rewrite needs a line to rewrite *and* a real connection to
+              // the gap. Anything else is advice, and is framed as advice —
+              // striking through an unrelated bullet said the opposite of
+              // what was meant.
+              const isRewrite = Boolean(s.original_bullet) && s.has_honest_connection !== false;
+              return (
+                <div key={i} className="rounded-2xl border border-border bg-background p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {s.missing_skill && <Badge variant="wine">{s.missing_skill}</Badge>}
+                      {s.priority === "required" && <Badge variant="error">Must have</Badge>}
+                    </div>
+                    {s.suggestion && (
+                      <CopyButton value={s.suggestion} label={isRewrite ? "Copy rewrite" : "Copy"} />
+                    )}
+                  </div>
+
+                  {isRewrite && (
+                    <div className="mb-3">
+                      <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+                        Rewriting this line
+                      </p>
+                      <p className="text-[14px] leading-relaxed text-text-secondary line-through decoration-text-disabled">
+                        {s.original_bullet}
+                      </p>
+                      {/* Says *why* this line was picked. Absent on suggestions
+                          stored before per-skill targeting existed. */}
+                      {s.original_bullet_source && (
+                        <p className="mt-1 text-[12px] text-text-muted">
+                          {s.original_bullet_source}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+                    {isRewrite ? "Suggested rewrite" : "What to build toward"}
                   </p>
-                )}
-              </div>
-            ))
+                  <p className="text-[15px] leading-relaxed text-text-primary">{s.suggestion}</p>
+                </div>
+              );
+            })
           ) : (
             <p className="text-[15px] text-text-secondary">
               No rewrite suggestions were generated for this match.

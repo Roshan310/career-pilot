@@ -25,7 +25,7 @@ export function StatCard({ icon: Icon, label, value, decimals = 0, suffix = "", 
       className="flex items-center gap-4 rounded-card border border-border bg-card p-5 shadow-card transition-shadow duration-[180ms] hover:shadow-card-hover"
     >
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-wine-tint">
-        <Icon size={20} className="text-wine" strokeWidth={2} />
+        <Icon size={20} className="text-wine-fg" strokeWidth={2} />
       </div>
       <div className="min-w-0">
         <p className="text-sm text-text-secondary">{label}</p>

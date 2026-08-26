@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import { RecentInterviews } from "@/components/dashboard/recent-interviews";
 import { UploadResumeDialog } from "@/components/resume/upload-resume-dialog";
 import { CreateJobDialog } from "@/components/job/create-job-dialog";
 import { useInterviews, useJobs, useMatches, useResumes } from "@/hooks/use-data";
+import { useDropUnknownId, usePrefill } from "@/hooks/use-prefill";
+import { Skeleton } from "@/components/ui/skeleton";
 import { createInterview } from "@/lib/api/interviews";
 import { ApiError } from "@/lib/api/client";
 import { isRecordingSupported } from "@/lib/voice";
@@ -29,7 +31,16 @@ const PREPARING_STEPS = [
   "Drafting questions about your gaps…",
 ];
 
+/** Suspense boundary keeps this route static — see hooks/use-prefill.ts. */
 export default function InterviewPracticePage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-64 rounded-card" />}>
+      <InterviewPracticePageInner />
+    </Suspense>
+  );
+}
+
+function InterviewPracticePageInner() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: resumes = [] } = useResumes();
@@ -37,9 +48,13 @@ export default function InterviewPracticePage() {
   const { data: matches = [] } = useMatches();
   const { data: interviews = [], isLoading: interviewsLoading } = useInterviews();
 
-  const [resumeId, setResumeId] = useState("");
-  const [jobId, setJobId] = useState("");
-  const [matchId, setMatchId] = useState("");
+  // Prefilled when arriving from a match report's "Practice these gaps", which
+  // carries all three — the gap-analysis option only appears when the match's
+  // resume and job both match the current selection.
+  const prefill = usePrefill();
+  const [resumeId, setResumeId] = useState(prefill.resume);
+  const [jobId, setJobId] = useState(prefill.job);
+  const [matchId, setMatchId] = useState(prefill.match);
   const [starting, setStarting] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -74,15 +89,23 @@ export default function InterviewPracticePage() {
     if (matchId && !usableMatches.some((m) => m.id === matchId)) setMatchId("");
   }, [usableMatches, matchId]);
 
+  useDropUnknownId(resumeId, resumes, () => setResumeId(""));
+  useDropUnknownId(jobId, jobs, () => setJobId(""));
+
   const resumable = interviews.filter(
     (i) => i.status === "in_progress" || i.status === "wrapping_up",
   );
 
+  const blockedBy = !resumeId && !jobId
+    ? "Pick a resume and a job description to continue."
+    : !resumeId
+      ? "Pick a resume to continue."
+      : !jobId
+        ? "Pick a job description to continue."
+        : null;
+
   async function start() {
-    if (!resumeId || !jobId) {
-      toast.error("Pick both a resume and a job description.");
-      return;
-    }
+    if (!resumeId || !jobId) return;
     setStarting(true);
     setStepIndex(0);
     try {
@@ -109,7 +132,7 @@ export default function InterviewPracticePage() {
       {resumable.length > 0 && (
         <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div className="flex items-center gap-3">
-            <Clock size={18} className="text-wine" />
+            <Clock size={18} className="text-wine-fg" />
             <span className="text-[15px] text-text-primary">
               You have an interview in progress.
             </span>
@@ -125,7 +148,7 @@ export default function InterviewPracticePage() {
 
       <Card className="p-6">
         <CardTitle>
-          <Mic size={18} className="text-wine" /> New Interview
+          <Mic size={18} className="text-wine-fg" /> New Interview
         </CardTitle>
 
         <div className="mt-5 grid gap-5 md:grid-cols-2">
@@ -140,14 +163,15 @@ export default function InterviewPracticePage() {
                 <Upload size={16} /> Upload a resume first
               </Button>
             ) : (
-              <Select value={resumeId} onChange={(e) => setResumeId(e.target.value)}>
-                <option value="">Select a resume…</option>
-                {resumes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.file_name || "Untitled resume"} (v{r.version})
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={resumeId}
+                onValueChange={setResumeId}
+                placeholder="Select a resume…"
+                options={resumes.map((r) => ({
+                  value: r.id,
+                  label: `${r.file_name || "Untitled resume"} (v${r.version})`,
+                }))}
+              />
             )}
           </div>
 
@@ -162,14 +186,15 @@ export default function InterviewPracticePage() {
                 <Plus size={16} /> Add a job description first
               </Button>
             ) : (
-              <Select value={jobId} onChange={(e) => setJobId(e.target.value)}>
-                <option value="">Select a job…</option>
-                {jobs.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {[j.title, j.company].filter(Boolean).join(" · ") || "Untitled role"}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={jobId}
+                onValueChange={setJobId}
+                placeholder="Select a job…"
+                options={jobs.map((j) => ({
+                  value: j.id,
+                  label: [j.title, j.company].filter(Boolean).join(" · ") || "Untitled role",
+                }))}
+              />
             )}
           </div>
 
@@ -177,21 +202,26 @@ export default function InterviewPracticePage() {
             <Label>Gap analysis (optional)</Label>
             <Select
               value={matchId}
-              onChange={(e) => setMatchId(e.target.value)}
+              onValueChange={setMatchId}
               disabled={usableMatches.length === 0}
-            >
-              <option value="">
-                {usableMatches.length === 0
-                  ? "No completed analysis for this pairing"
-                  : "Don't use one — general questions"}
-              </option>
-              {usableMatches.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {[m.job_title, m.job_company].filter(Boolean).join(" · ") || "Analysis"}
-                  {m.overall_score !== null ? ` — ${Math.round(m.overall_score * 100)}% match` : ""}
-                </option>
-              ))}
-            </Select>
+              options={[
+                {
+                  value: "",
+                  label:
+                    usableMatches.length === 0
+                      ? "No completed analysis for this pairing"
+                      : "Don't use one — general questions",
+                },
+                ...usableMatches.map((m) => ({
+                  value: m.id,
+                  label:
+                    ([m.job_title, m.job_company].filter(Boolean).join(" · ") || "Analysis") +
+                    (m.overall_score !== null
+                      ? ` — ${Math.round(m.overall_score * 100)}% match`
+                      : ""),
+                })),
+              ]}
+            />
             <p className="text-[13px] text-text-muted">
               With an analysis attached, questions probe the specific skills you&apos;re missing
               instead of asking generically.
@@ -217,7 +247,7 @@ export default function InterviewPracticePage() {
           <span className="text-[13px] text-text-muted">
             {starting
               ? PREPARING_STEPS[stepIndex]
-              : "Up to 8 questions or 20 minutes, whichever comes first."}
+              : (blockedBy ?? "Up to 8 questions or 20 minutes, whichever comes first.")}
           </span>
         </div>
       </Card>

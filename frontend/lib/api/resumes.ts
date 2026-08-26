@@ -15,6 +15,14 @@ export function uploadResume(file: File): Promise<Resume> {
   return api.postForm<Resume>("/api/resumes", form);
 }
 
+/**
+ * The original uploaded file. Streamed through the API (not a presigned URL) so
+ * the JWT stays the only way in — hence a blob rather than a plain href.
+ */
+export function downloadResumeFile(id: string): Promise<Blob> {
+  return api.getBlob(`/api/resumes/${id}/file`);
+}
+
 export function deleteResume(id: string): Promise<void> {
   return api.delete<void>(`/api/resumes/${id}`);
 }

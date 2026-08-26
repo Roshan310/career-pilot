@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
@@ -71,11 +72,32 @@ class QuestionPlan(BaseModel):
         return v
 
 
+# Only jd_specific is implemented; behavioral/technical currently route through
+# the same generator. Constrained anyway so an unknown value is rejected at the
+# edge rather than silently stored and never read.
+InterviewMode = Literal["jd_specific", "behavioral", "technical"]
+
+
 class InterviewCreateRequest(BaseModel):
     resume_id: uuid.UUID
     job_id: uuid.UUID
     match_id: uuid.UUID | None = None
-    mode: str = "jd_specific"
+    mode: InterviewMode = "jd_specific"
+
+
+class InterviewReplayRequest(BaseModel):
+    """Re-run a finished interview's stored questions.
+
+    Nothing identifies the source here — that is the path parameter. The only
+    choice is whether follow-ups are asked: with them off the interview is main
+    questions only, every one of which is already in the audio cache, so the
+    session costs nothing in TTS.
+
+    A body with a default rather than a query parameter, so the field has one
+    obvious home if replay ever takes more options.
+    """
+
+    allow_follow_ups: bool = True
 
 
 class CurrentQuestion(BaseModel):
@@ -121,6 +143,17 @@ class TurnDetail(BaseModel):
 
 class InterviewSessionResponse(BaseModel):
     id: uuid.UUID
+    # What this interview was *about*. Direct columns, so from_attributes picks
+    # them up for free. Without them the report page could not say which role it
+    # was for, nor offer to practise the same pairing again.
+    resume_id: uuid.UUID | None = None
+    job_id: uuid.UUID | None = None
+    match_id: uuid.UUID | None = None
+    # The root attempt this session re-runs, or None if it is the original.
+    replay_of_session_id: uuid.UUID | None = None
+    # False for a "main questions only" run — the live UI says so, because a
+    # follow-up counter that can never move looks broken rather than deliberate.
+    allow_follow_ups: bool = True
     mode: str
     status: str
     question_plan: list | None
@@ -150,14 +183,26 @@ class TranscriptSegment(BaseModel):
     start_ms: float = Field(ge=0)
     end_ms: float = Field(ge=0)
 
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "TranscriptSegment":
+        # Both bounds were validated individually but never against each other,
+        # so a reversed segment produced a negative gap and corrupted the pause
+        # metrics derived from it.
+        if self.end_ms < self.start_ms:
+            raise ValueError("end_ms must not be before start_ms")
+        return self
+
 
 class TurnSubmitRequest(BaseModel):
     question_number: int = Field(ge=1)
-    answer_transcript: str
-    duration: float = Field(ge=0)
+    answer_transcript: str = Field(max_length=100_000)
+    # Upper bound is the interview hard cap with room to spare. Without one, a
+    # client claiming duration=0.001 produced an absurd words-per-minute figure,
+    # which then drove the pace findings on the report.
+    duration: float = Field(ge=0, le=3600)
     # Which voice layer produced answer_transcript. "server_stt" is unused today —
     # it's the value a future WebSocket/streaming-STT transport will send.
-    source: str = "browser_speech"  # browser_speech | typed | server_stt
+    source: Literal["browser_speech", "typed", "server_stt"] = "browser_speech"
     segments: list[TranscriptSegment] | None = None
     # §7.2: no speech captured after the retry prompt. Advances the interview
     # without an evaluation LLM call.
@@ -189,6 +234,16 @@ class InterviewListItem(BaseModel):
     job_title: str | None
     job_company: str | None
     overall_score: float | None
+    # Lets the history list plot a per-dimension trend without one report fetch
+    # per session.
+    dimension_averages: dict | None = None
+    # Attempt numbering within a replay chain. Both are 1 for a session that has
+    # never been replayed, so the UI can render "Attempt 2 of 3" without a
+    # special case for the common one.
+    replay_of_session_id: uuid.UUID | None = None
+    allow_follow_ups: bool = True
+    attempt_number: int = 1
+    total_attempts: int = 1
     started_at: datetime
     ended_at: datetime | None
     duration_minutes: float | None
@@ -201,6 +256,7 @@ class SessionReportResponse(BaseModel):
     strengths: list | None
     improvement_areas: list | None
     gap_coverage: dict | None
+    dimension_averages: dict | None = None
     speech_metrics: dict | None
     created_at: datetime
 
