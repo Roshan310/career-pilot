@@ -16,7 +16,7 @@ const ITEMS = [
   },
   {
     q: "Do I need a microphone?",
-    a: "It helps, but it isn't required. Speech is handled server-side rather than by the browser, so practice works even where there's no built-in speech support — and every question has a typed fallback if you'd rather not talk.",
+    a: "It helps, but it isn't required. Speech is handled server-side rather than by the browser, so practice works even where there's no built-in speech support, and every question has a typed fallback if you'd rather not talk.",
   },
   {
     q: "What can I upload?",
