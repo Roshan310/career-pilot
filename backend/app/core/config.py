@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 14
 
-    free_tier_monthly_match_limit: int = 5
+    free_tier_monthly_match_limit: int = 10
     free_tier_monthly_interview_limit: int = 10
 
     interview_max_followups_per_question: int = 2
