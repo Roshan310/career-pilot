@@ -5,7 +5,7 @@ const ROWS = [
   {
     badge: "Match scoring",
     title: "A score you can actually act on",
-    body: "Four signals are scored separately — semantic fit, skill overlap, experience level and keyword density — so you can tell whether you lost the match on substance or just on wording.",
+    body: "Four signals are scored separately — semantic fit, skill overlap, experience level and keyword density, so you can tell whether you lost the match on substance or just on wording.",
     visual: <ScoreVisual />,
   },
   {
@@ -17,7 +17,7 @@ const ROWS = [
   {
     badge: "Mock interviews",
     title: "An interviewer that has read your resume",
-    body: "Questions come from your resume and that specific posting, never a generic bank — and each one shows what it was drawn from. Answer out loud; vague answers get a follow-up, and you get pace, filler-word and gap-coverage metrics at the end.",
+    body: "Questions come from your resume and that specific posting, never a generic bank, and each one shows what it was drawn from. Answer out loud; vague answers get a follow-up, and you get pace, filler-word and gap-coverage metrics at the end.",
     visual: <InterviewVisual />,
   },
   {
