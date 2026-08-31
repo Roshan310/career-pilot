@@ -11,6 +11,7 @@ yarn.lock
 .env
 .env.local
 .env.*.local
+.env.*
 
 # IDE
 .vscode/
