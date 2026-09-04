@@ -67,7 +67,7 @@ export default function RegisterPage() {
             autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Roshan Aryal"
+            placeholder="Your Name"
           />
         </div>
         <div className="space-y-2">

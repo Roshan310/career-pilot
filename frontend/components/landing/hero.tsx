@@ -21,12 +21,12 @@ export function Hero() {
       />
 
       <div className="mx-auto max-w-[880px] px-6 text-center">
-        <div className="landing-rise">
+        {/* <div className="landing-rise">
           <span className="inline-flex items-center gap-2 rounded-badge border border-border bg-card px-4 py-1.5 text-[13px] font-medium text-text-secondary shadow-card">
             <Sparkles size={14} className="text-wine-fg" />
             Resume matching and AI mock interviews, in one place
           </span>
-        </div>
+        </div> */}
 
         <h1
           className="landing-rise mt-7 text-[42px] font-bold leading-[1.06] tracking-[-0.03em] text-text-primary sm:text-[60px] lg:text-[68px]"
